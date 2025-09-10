@@ -18,25 +18,28 @@ Legend: ✅ Completed · 🟡 In Progress · ⬜ TODO
 - Completed
   - Repo layout established (workspaces) and web app scaffolded (Vite + React + TS + Tailwind)
   - App shell and routing (Header, Layout, Home/Play/Results, NotFound)
-  - UI atoms: Button, Card, Modal; theme switched to yellow accents
-  - Prize Ladder component and basic highlight logic
-  - Minimal game state (types, reducer), wired to Play; sample questions
-  - Lifeline 50:50: implemented, hides two wrong answers, disables after use
-  - Audience Poll: implemented as dismissible modal with vertical bar chart; filters to remaining options; animated bars; ESC-to-close and focus trap
-  - Per-question timer: countdown in UI, auto-fail on timeout; disables interactions
-  - Switch Question: refined sourcing implemented; picks unseen question matching current difficulty when available, falls back gracefully; resets timer/state; friendly notice if none
-  - Difficulty scaling + per-level timing (easy/medium/hard mapped to levels 1–5/6–10/11–15)
-  - Quality gates: root ESLint/Prettier and GitHub Actions CI (lint, typecheck, build)
-  - Prize ladder: checkpoints (5, 10), safe winnings, game-over flow, and display on Results page
+  - UI atoms: Button, Card, Modal; theme accents
+  - Prize Ladder component with highlight logic and checkpoint visuals
+  - Core game state (types, reducer) wired to Play; sample questions across difficulties
+  - Lifelines: 50:50, Audience Poll (modal), and Switch Question with refined sourcing (unseen same-difficulty, graceful fallbacks)
+  - Per-question timer with auto TIME_UP → incorrect; disables interactions
+  - Difficulty scaling + per-level timing (easy/medium/hard for levels 1–5/6–10/11–15)
+  - Quality gates: root ESLint/Prettier and GitHub Actions CI (lint, typecheck, build, tests)
+  - Prize ladder checkpoints (5, 10), safe winnings, game-over flow, Results page
   - UX polish: checkpoint pulse animation, confetti burst, and chime on crossing checkpoints
-  - Walk away: keep current winnings and end game
+  - Walk Away action: keep current winnings and end game
+  - Session persistence: versioned snapshot restore (HYDRATE), autosave/clear on game over
+  - Backend: migrated to Python FastAPI with /health, /categories, /questions
+  - Frontend API integration: Play fetches questions with loading banner and fallback notice when API unavailable; Home loads categories dynamically with its own loading/fallback banners
+  - Dev experience: PowerShell script dev.ps1 to run API + Vite together (sets VITE_API_BASE)
 - In Progress
-  - Coding standards (ESLint config partially set), accessibility pass (broader app)
-  - Game progression polish (ladder checkpoints/leveling rules)
+  - Accessibility pass (ARIA, focus management, keyboard navigation)
+  - Expand unit tests for lifeline edge cases, checkpoints, endgame
 - TODO (near-term)
-  - Session persistence: resume game after refresh (local/session storage)
-  - Tests for lifeline edge cases and ladder rules
+  - API enhancements: shuffle choices, seedable randomness, richer content source
+  - Additional tests (switch fallback message, final level, dynamic categories path)
   - Accessibility sweep and ARIA landmarks
+  - Deployment docs and hosting setup (web + API)
 
 ---
 
@@ -50,8 +53,8 @@ Goal: Establish foundations and shared conventions.
 - Prettier baseline (`.prettierrc`)
 
 ### In Progress 🟡
-- Define coding standards: TypeScript strictness (enabled in web), ESLint rules (partial)
-- Decide on state model: Reducer chosen and implemented minimally
+- Define coding standards: TypeScript strictness (enabled in web), ESLint rules (ongoing refinements)
+- Decide on state model: Reducer chosen and implemented
 
 ### TODO ⬜
 - Define semantic commit and PR guidelines
@@ -89,7 +92,7 @@ Goal: Deterministic, testable game state and transitions.
 - Timer service: per-question countdown, auto TIME_UP → incorrect; UI countdown
 
 ### In Progress 🟡
-- Prize ladder progression and checkpoints (baseline present; refine rules)
+- Minor polish to prize ladder visuals and edge-case rules
 
 ### TODO ⬜
 - Question queue management and difficulty scaling
@@ -104,14 +107,13 @@ Goal: Implement classic lifelines governed by game rules.
 ### Completed ✅
 - 50:50 — removes two incorrect answers; disables once used; reflected in UI
 - Audience Poll — dismissible modal; vertical bars; filters to non-eliminated options; animated; ESC/Focus trap
-- Switch Question — basic rotation to next question; resets timer/state
+- Switch Question — refined sourcing (unseen same-difficulty with graceful fallbacks); resets timer/state and sets friendly notice if none
 
 ### In Progress 🟡
 - —
 
 ### TODO ⬜
-- Refine Switch sourcing — fetch a truly new question (not yet seen), avoid duplicates, preserve difficulty curve; clear lifeline state as needed
-- Enforce per-level availability if rules demand
+- Enforce per-level availability if rules demand (optional rule variant)
 - Tests for lifeline edge cases
 
 ---
@@ -120,33 +122,32 @@ Goal: Implement classic lifelines governed by game rules.
 Goal: Production-ready look-and-feel with inclusive design.
 
 ### Completed ✅
-- Theme accents updated to yellow to match show feel
+- Theme accents updated to match show feel
 - Modal entrance animation (fade/scale) and poll bar grow animations
 - Modal accessibility: focus trap and ESC-to-close
+- Checkpoint pulse animation, confetti burst, and chime on checkpoint
+- Loading/fallback banners for API interactions (Play + Home)
 
 ### In Progress 🟡
 - Broader accessibility sweep (focus management across pages, ARIA landmarks)
 
 ### TODO ⬜
-- Prize ladder checkpoint visuals improvement, micro-interactions
-- Loading/skeleton states for API calls (future)
+- Further prize ladder micro-interactions
+- Broader accessibility and keyboard nav
 
 ---
 
 ## Next work items (order of attack)
-1) Game engine: Session persistence (resume after refresh)
-  - Acceptance criteria:
-    - If a saved session exists and isn’t finished, Play resumes exactly where you left off (timer, level, question state, lifelines)
-    - “New Game” clears saved session and starts fresh
-    - Storage is versioned to allow safe future migrations
-2) Testing & reliability
-  - Add unit tests for lifelines (50:50 elimination correctness; audience poll after 50:50; switch uniqueness) and ladder rules
-3) Accessibility sweep
-  - Landmarks, focus management, and key nav across Play and modals
+1) Accessibility sweep (high impact, low risk)
+  - Landmarks, focus management, keyboard navigation across Play and modals
+2) Testing & reliability improvements
+  - Add unit tests for: checkpoints edge cases (5/10), final level completion, switch fallback message, dynamic categories path
+3) API enhancements for question quality (medium)
+  - Shuffle choices, seedable randomness, richer content source; maintain difficulty curve
 
 ---
 
-## Appendix — LLM Provider Strategy (Gemini now → Internal later)
+## Appendix — LLM Provider Strategy (future; optional)
 
 Goal: Start with Google Gemini for speed-to-MVP while keeping a clean, swappable abstraction to migrate to an internal company LLM with minimal changes.
 
@@ -205,9 +206,7 @@ Define a narrow, provider-agnostic interface used by the API layer:
 
 ### Roadmap checkboxes (map to phases)
 - Phase 3 (Backend):
-  - ⬜ Define `LLMClient` interface and factory
-  - ⬜ Implement `GeminiClient` + env validation
-  - ⬜ Add `InternalLLMClient` stub and tests
+  - ⬜ Define optional `LLMClient` interface and factory (future)
   - ⬜ Rate limiting, retries with backoff, and error normalization
 - Phase 4 (AI Integration):
   - ⬜ Prompt templates + golden tests

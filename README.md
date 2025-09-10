@@ -1,206 +1,110 @@
 # 🎯 Next Millionaire Game
 
-> An AI-powered web quiz game inspired by "Who Wants to Be a Millionaire?" with intelligent question generation and interactive gameplay.
+An open-source web quiz game inspired by "Who Wants to Be a Millionaire?" with classic lifelines, a prize ladder, timers, and a simple Python API.
 
 ## 🌟 Overview
 
-Next Millionaire Game is an interactive web-based quiz application that recreates the excitement of the classic TV game show "Who Wants to Be a Millionaire?". Powered by advanced AI technology, the game dynamically generates questions across multiple categories and provides an authentic game show experience with an AI host, lifelines, and progressive prize ladder.
+This app recreates the core Millionaire gameplay: 15 questions, increasing difficulty, lifelines (50:50, Audience Poll, Switch), prize ladder with safe checkpoints, and a results screen. The frontend can use a local Python FastAPI service for questions or fall back to built-in samples. Categories are loaded dynamically from the API when available.
 
-## ✨ Key Features
+## ✨ Features
 
-- **🤖 AI-Powered Question Generation**: Dynamic questions across multiple categories using LLM technology
-- **🎙️ Interactive AI Host**: AI host that speaks questions, adds suspense, and guides gameplay
-- **🆘 Classic Lifelines**: Three traditional lifelines (50:50, Audience Poll, Switch Question)
-- **💰 Progressive Prize Ladder**: Climb from $100 to $1 Million with checkpoint levels
-- **⏱️ Timed Challenges**: Time limits for early questions to increase difficulty
-- **🎵 Authentic Sound Effects**: Game show sounds and music for immersive experience
-- **📱 Responsive Design**: Works seamlessly across desktop and mobile devices
-- **🏆 Multiple Categories**: Choose from History, Geography, Sports, Science, Movies, Music, and Recent Events
+- Classic lifelines: 50:50, Audience Poll (modal), Switch Question
+- Prize ladder with checkpoints (Q5 and Q10), safe winnings, and results page
+- Per-question timers with difficulty scaling (easy/medium/hard)
+- Difficulty-aware question progression and refined Switch sourcing (unseen if possible)
+- Category selection on Home; dynamic /categories fetch with loading/fallback banners
+- Play page fetches /questions with a loading banner; falls back to local samples if API is unavailable
+- Session persistence: resume after refresh; New Game clears saved session
+- CI with lint, typecheck, build, and tests
 
-## 🎮 How to Play
-
-1. **Choose Your Categories**: Select 5 categories from the available options
-2. **Answer Questions**: Progress through 15 questions of increasing difficulty
-3. **Use Lifelines**: Strategically use your three lifelines when stuck
-4. **Climb the Ladder**: Earn money for each correct answer
-5. **Reach the Million**: Answer all 15 questions to become a millionaire!
-
-### Prize Ladder
-- Questions 1-5: $100 - $1,000 (Easy)
-- Questions 6-10: $2,000 - $32,000 (Medium) 
-- Questions 11-15: $64,000 - $1,000,000 (Hard)
-
-### Lifelines
-- **50:50**: Removes two incorrect answers
-- **Audience Poll**: Shows simulated audience voting percentages
-- **Switch Question**: Replace current question with a new one
-
-## 🚀 Getting Started
+## 🚀 Get started
 
 ### Prerequisites
-- Python 3.10+ (for backend)
-- npm or pnpm
-- Modern web browser
+- Python 3.10+
+- npm or pnpm (for the web app)
 
-### Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/mamataparab22/Next-Millionaire-Game.git
-
-# Navigate to project directory
-cd Next-Millionaire-Game
-
-# Install dependencies
+### Install dependencies
+```powershell
+# from repo root
 npm install
 # or
 pnpm install
-
-# Start development server
-npm run dev
-# or
-pnpm dev
 ```
 
-### Environment Setup
-
-Create a `.env` file in the root directory:
-
-```env
-# LLM API Configuration
-LLM_API_URL=your_llm_api_url
-LLM_API_KEY=your_api_key
-
-# Optional: Custom settings
-TIMER_DURATION=30
-MAX_QUESTIONS=15
-```
-
-## 🏗️ Technical Architecture
-
-### Tech Stack
-- **Frontend**: React + Vite + TypeScript + Tailwind CSS
-- **API**: FastAPI (apps/api) to serve questions (stubbed now; LLM later)
-- **Audio**: Howler.js for sound effects and music
-- **Voice**: Web Speech API / TTS for AI host
-- **Backend**: Python + FastAPI
-- **State Management**: React Reducer or XState
-- **Real-time**: Socket.IO for live audience poll animations
-
-### Project Structure
-```
-next-millionaire/
-├── apps/
-│   ├── web/                 # React frontend
-│   │   ├── src/
-│   │   │   ├── components/
-│   │   │   ├── state/
-│   │   │   └── sfx/
-│   │   └── vite.config.ts
-│   └── api/                 # FastAPI backend
-│       ├── src/
-│       │   ├── routes/
-│       │   └── llm/
-│       └── package.json
-└── package.json
-```
-
-### Game Flow
-```
-Start → Category Selection → Question Generation → 
-Question Reading → Answer Timer → Evaluation → 
-Next Level or Game Over → Results
-```
-
-## 🧠 AI Integration
-
-The game leverages several AI capabilities:
-
-- **Question Generation**: Creates contextually appropriate questions using LLM Chat
-- **Answer Validation**: Ensures question accuracy with LLM Analyze
-- **Current Events**: Uses Ask Web for recent events questions
-- **Voice Synthesis**: AI host speaks using TTS technology
-- **Content Moderation**: Filters inappropriate content automatically
-
-## 🎯 Game Categories
-
-- **History**: World events, historical figures, and time periods
-- **Geography**: Countries, capitals, landmarks, and physical features  
-- **Sports**: Athletes, events, records, and sports trivia
-- **Science**: Physics, chemistry, biology, and scientific discoveries
-- **Movies**: Films, actors, directors, and cinema history
-- **Music**: Artists, songs, genres, and music history
-- **Recent Events**: Current news and happenings from the last 12 months
-
-## 🛠️ Development
-
-### Running Tests
-```bash
-npm --prefix apps/web run test
-```
-
-### API (local)
-Python FastAPI backend lives in `apps/api`.
+### Run (Windows PowerShell)
+You can run both API and web together via the helper script:
 
 ```powershell
-# Windows PowerShell
+./dev.ps1
+# Optional params: -ApiPort 5177 -WebPort 5173 -ViteApiBase http://localhost:5177
+```
+
+This starts:
+- FastAPI on http://localhost:5177
+- Vite dev server on http://localhost:5173 with VITE_API_BASE set
+
+If you only want the API:
+
+```powershell
+cd apps/api
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+./.venv/Scripts/Activate.ps1
 python -m pip install --upgrade pip
 pip install -e .
 api-dev
 ```
 
-Set the web app to use your API by adding to `apps/web/.env`:
+Point the web app at the API by setting an env var when running Vite or via `apps/web/.env`:
+
 ```
 VITE_API_BASE=http://localhost:5177
 ```
 
-### Building for Production
-```bash
-npm run build
-# or
-pnpm build
+### Useful scripts
+
+Root (workspaces):
+- `npm run dev` — run all workspace dev scripts (requires npm/pnpm installed)
+- `npm run build` — build all
+- `npm run lint` — lint across workspaces
+- `npm run typecheck` — typecheck web
+- `npm run test` — run tests
+
+Web (apps/web):
+- `npm --prefix apps/web run dev`
+- `npm --prefix apps/web run build`
+- `npm --prefix apps/web run test`
+
+API (apps/api):
+- See the section above for Python commands
+
+## �️ Tech stack
+
+- Frontend: React + Vite + TypeScript + Tailwind CSS
+- State: Typed reducer (lifelines, timers, winnings, persistence)
+- Backend: Python FastAPI (endpoints: GET /health, GET /categories, POST /questions)
+- Tests: Vitest (jsdom)
+- CI: GitHub Actions (lint, typecheck, build, tests)
+
+## 🧩 Gameplay notes
+
+- 15-question ladder with checkpoints at 5 and 10
+- Time budgets: easy 30s, medium 45s, hard 60s
+- Switch selects an unseen same-difficulty question if available; otherwise falls back and shows a friendly notice
+
+## 🧪 Testing
+
+```powershell
+npm --prefix apps/web run test
 ```
 
-### Linting and Formatting
-```bash
-# Run linter
-npm run lint
+## 📜 Roadmap
 
-# Format code
-npm run format
-```
-
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
-
-### Development Setup
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+See `ROADMAP.md` for detailed phases and next work items (accessibility and expanded tests are next).
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT — see `LICENSE`.
 
-## 🙏 Acknowledgments
+## � Acknowledgments
 
-- Inspired by the classic "Who Wants to Be a Millionaire?" game show
-- Built with modern web technologies and AI integration
-- Thanks to all contributors and the open source community
-
-## 📞 Support
-
-If you have any questions or need help:
-
-- 📧 Create an issue in this repository
-- 💬 Start a discussion in the Discussions tab
-- 🐛 Report bugs using the issue template
-
----
-
-**Ready to become the next millionaire? Start playing and test your knowledge!** 🎉
+Inspired by the classic TV show. Built with modern web tooling and a simple Python API.
