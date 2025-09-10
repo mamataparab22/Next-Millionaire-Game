@@ -33,7 +33,6 @@ Legend: ✅ Completed · 🟡 In Progress · ⬜ TODO
   - Frontend API integration: Play fetches questions with loading banner and fallback notice when API unavailable; Home loads categories dynamically with its own loading/fallback banners
   - Dev experience: PowerShell script dev.ps1 to run API + Vite together (sets VITE_API_BASE)
 - In Progress
-  - Accessibility pass (ARIA, focus management, keyboard navigation)
   - Expand unit tests for lifeline edge cases, checkpoints, endgame
 - TODO (near-term)
   - API enhancements: shuffle choices, seedable randomness, richer content source
@@ -53,8 +52,7 @@ Goal: Establish foundations and shared conventions.
 - Prettier baseline (`.prettierrc`)
 
 ### In Progress 🟡
-- Define coding standards: TypeScript strictness (enabled in web), ESLint rules (ongoing refinements)
-- Decide on state model: Reducer chosen and implemented
+-
 
 ### TODO ⬜
 - Define semantic commit and PR guidelines
