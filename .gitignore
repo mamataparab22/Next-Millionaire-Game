@@ -15,6 +15,15 @@ yarn-error.log*
 .env.*
 !.env.example
 
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+
 # Editor
 .vscode/
 .DS_Store

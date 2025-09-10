@@ -1,2 +1,0 @@
-[console_scripts]
-api-dev = millionaire_api.__main__:main

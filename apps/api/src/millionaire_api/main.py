@@ -1,11 +1,21 @@
 from typing import List, Optional
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 import os
 import logging
 from .llm import make_llm_client, LLMClient, LLMError
 from pydantic import BaseModel
 
 app = FastAPI(title="Next Millionaire API")
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 logger = logging.getLogger("millionaire_api")
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
