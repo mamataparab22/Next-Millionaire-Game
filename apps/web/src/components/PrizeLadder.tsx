@@ -21,7 +21,7 @@ const DEFAULT_LADDER: LadderItem[] = [
   { level: 1, amount: '$100' },
 ]
 
-export function PrizeLadder({ currentLevel = 1, ladder = DEFAULT_LADDER }: { currentLevel?: number; ladder?: LadderItem[] }) {
+export function PrizeLadder({ currentLevel = 1, lastSafeLevel = 0, pulseLevel, ladder = DEFAULT_LADDER }: { currentLevel?: number; lastSafeLevel?: number; pulseLevel?: number; ladder?: LadderItem[] }) {
   return (
     <aside className="rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm">
       <h2 className="mb-2 text-center text-xs font-semibold tracking-wide text-slate-300">Prize Ladder</h2>
@@ -29,19 +29,26 @@ export function PrizeLadder({ currentLevel = 1, ladder = DEFAULT_LADDER }: { cur
         {ladder.map((item) => {
           const isCurrent = item.level === currentLevel
           const isCheckpoint = item.level === 5 || item.level === 10
+          const achievedCheckpoint = isCheckpoint && item.level <= lastSafeLevel
           return (
-            <li
+      <li
               key={item.level}
               className={
-                'flex items-center justify-between rounded px-2 py-1 ' +
+                'flex items-center justify-between rounded px-2 py-1 transition-colors ' +
                 (isCurrent
                   ? 'bg-yellow-400 text-slate-900 font-bold shadow'
                   : isCheckpoint
                   ? 'bg-slate-800 text-yellow-300 font-semibold'
-                  : 'text-slate-300')
+                  : 'text-slate-300') +
+        (achievedCheckpoint ? ' ring-1 ring-yellow-400/60' : '') +
+        (pulseLevel === item.level ? ' checkpoint-pulse' : '')
               }
             >
-              <span className="tabular-nums">{item.level.toString().padStart(2, '0')}</span>
+              <span className={
+                'tabular-nums ' + (isCheckpoint ? 'after:ml-1 after:content-["★"] after:text-yellow-400' : '')
+              }>
+                {item.level.toString().padStart(2, '0')}
+              </span>
               <span className="font-semibold">{item.amount}</span>
             </li>
           )

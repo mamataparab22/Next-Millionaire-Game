@@ -1,26 +1,34 @@
 import { type GameAction, type GameState, type Question } from './types'
+import { levelToDifficulty, timeForLevel, isCheckpoint, prizeForLevel, lastSafeLevel as computeLastSafe } from './config'
 
 export const initialState: GameState = {
   level: 1,
   usedLifelines: { fiftyFifty: false, audience: false, switch: false },
   currentQuestionIndex: 0,
   questions: [],
+  seenQuestionIds: [],
   eliminatedChoices: [],
   lockedChoice: null,
   answered: false,
   correct: null,
   pollResults: null,
-  remainingTime: 30,
+  remainingTime: timeForLevel(1),
+  infoMessage: null,
+  winnings: 0,
+  lastSafeLevel: 0,
+  gameOver: false,
 }
 
 export function reducer(state: GameState, action: GameAction): GameState {
   switch (action.type) {
     case 'LOAD_QUESTIONS': {
       const qs = action.questions
-      return {
+  return {
         ...initialState,
         questions: qs,
-  remainingTime: 30,
+        remainingTime: timeForLevel(1),
+  // mark the first question as seen if present
+  seenQuestionIds: qs[0] ? [qs[0].id] : [],
       }
     }
     case 'SELECT_CHOICE': {
@@ -32,12 +40,31 @@ export function reducer(state: GameState, action: GameAction): GameState {
       const q = state.questions[state.currentQuestionIndex]
       if (!q) return state
       const isCorrect = state.lockedChoice === q.correctIndex
-      return { ...state, answered: true, correct: isCorrect }
+      if (isCorrect) {
+        // Update winnings to prize for current level; update safe level if checkpoint
+        const newWinnings = prizeForLevel(state.level)
+        const newSafe = isCheckpoint(state.level) ? state.level : state.lastSafeLevel
+        return { ...state, answered: true, correct: true, winnings: newWinnings, lastSafeLevel: newSafe }
+      }
+      // Incorrect: end game immediately
+      const safeLevel = state.lastSafeLevel
+      const finalAmount = prizeForLevel(safeLevel)
+      return { ...state, answered: true, correct: false, gameOver: true, winnings: finalAmount }
     }
     case 'NEXT': {
       const nextIndex = state.currentQuestionIndex + 1
-      const nextLevel = state.level + (state.correct ? 1 : 0)
+  const nextLevel = state.level + (state.correct ? 1 : 0)
       const done = nextIndex >= state.questions.length
+      // If last question was correct and level was 15, game won
+      if (state.correct && state.level === 15) {
+        return {
+          ...state,
+          gameOver: true,
+          answered: true,
+          correct: true,
+          // winnings already set to $1,000,000 on LOCK_IN
+        }
+      }
       return {
         ...state,
         level: done ? state.level : nextLevel,
@@ -46,8 +73,13 @@ export function reducer(state: GameState, action: GameAction): GameState {
         lockedChoice: null,
         answered: false,
         correct: null,
-  pollResults: null,
-  remainingTime: 30,
+        pollResults: null,
+  remainingTime: timeForLevel(done ? state.level : nextLevel),
+        infoMessage: null,
+        seenQuestionIds:
+          done
+            ? state.seenQuestionIds
+            : Array.from(new Set([...state.seenQuestionIds, state.questions[Math.min(nextIndex, state.questions.length - 1)]?.id].filter(Boolean) as string[])),
       }
     }
     case 'USE_FIFTY_FIFTY': {
@@ -65,11 +97,42 @@ export function reducer(state: GameState, action: GameAction): GameState {
     }
     case 'USE_SWITCH_QUESTION': {
       if (state.usedLifelines.switch || state.answered) return state
-      const q = state.questions[state.currentQuestionIndex]
-      if (!q) return state
-      // Naive switch: rotate to next question in the list that is different.
-      const nextIdx = (state.currentQuestionIndex + 1) % state.questions.length
-      if (nextIdx === state.currentQuestionIndex) return state
+      const current = state.questions[state.currentQuestionIndex]
+      if (!current) return state
+
+  // Determine desired difficulty based on current level
+  const desiredDifficulty: Question['difficulty'] = levelToDifficulty(state.level)
+
+      // Build candidate lists
+      const unseenIndices = state.questions
+        .map((q, idx) => ({ q, idx }))
+        .filter(({ q }) => !state.seenQuestionIds.includes(q.id))
+
+      // First try: unseen and matching difficulty
+      const best = unseenIndices.find(({ q }) => q.difficulty === desiredDifficulty)
+
+      // Fallback 1: any unseen regardless of difficulty
+      const anyUnseen = best ? best : unseenIndices[0]
+
+      // Fallback 2: if nothing unseen, try a not-current index with same difficulty but seen before
+      const sameDiffSeen = !anyUnseen
+        ? state.questions
+            .map((q, idx) => ({ q, idx }))
+            .find(({ q, idx }) => idx !== state.currentQuestionIndex && q.difficulty === desiredDifficulty)
+        : undefined
+
+      // If no options, keep current and show notice
+      const target = anyUnseen ?? sameDiffSeen
+      if (!target) {
+        return {
+          ...state,
+          usedLifelines: { ...state.usedLifelines, switch: true },
+          infoMessage: 'No alternative question available at this level.',
+        }
+      }
+
+      const nextIdx = target.idx
+      const nextId = state.questions[nextIdx]?.id
       return {
         ...state,
         usedLifelines: { ...state.usedLifelines, switch: true },
@@ -79,7 +142,9 @@ export function reducer(state: GameState, action: GameAction): GameState {
         answered: false,
         correct: null,
         pollResults: null,
-        remainingTime: 30,
+  remainingTime: timeForLevel(state.level),
+        infoMessage: null,
+        seenQuestionIds: nextId ? Array.from(new Set([...state.seenQuestionIds, nextId])) : state.seenQuestionIds,
       }
     }
     case 'USE_AUDIENCE_POLL': {
@@ -117,13 +182,21 @@ export function reducer(state: GameState, action: GameAction): GameState {
     }
     case 'RESET':
       return initialState
+    case 'WALK_AWAY': {
+      if (state.answered || state.gameOver) return state
+      // Walk away keeps current winnings (from last correct). If none yet, winnings = 0.
+      return { ...state, gameOver: true, answered: true }
+    }
     case 'TICK': {
       if (state.answered) return state
       return { ...state, remainingTime: Math.max(0, state.remainingTime - 1) }
     }
     case 'TIME_UP': {
       if (state.answered) return state
-      return { ...state, answered: true, correct: false }
+      // Timeout acts as incorrect; end game with safe amount
+      const safeLevel = state.lastSafeLevel
+      const finalAmount = prizeForLevel(safeLevel)
+      return { ...state, answered: true, correct: false, gameOver: true, winnings: finalAmount }
     }
     default:
       return state

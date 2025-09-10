@@ -24,12 +24,11 @@ Legend: ✅ Completed · 🟡 In Progress · ⬜ TODO
   - Lifeline 50:50: implemented, hides two wrong answers, disables after use
   - Audience Poll: implemented as dismissible modal with vertical bar chart; filters to remaining options; animated bars; ESC-to-close and focus trap
   - Per-question timer: countdown in UI, auto-fail on timeout; disables interactions
-  - Switch Question: basic rotation implemented; resets timer/state
+  - Switch Question: refined sourcing implemented; picks unseen question matching current difficulty when available, falls back gracefully; resets timer/state; friendly notice if none
 - In Progress
   - Coding standards (ESLint config partially set), accessibility pass (broader app)
   - Game progression polish (ladder checkpoints/leveling rules)
 - TODO (near-term)
-  - Refine Switch Question sourcing (fetch new question, avoid duplicates, preserve difficulty/level)
   - Difficulty scaling and per-level timing tweaks
   - Formalize ESLint/Prettier config and add CI
 
@@ -129,16 +128,10 @@ Goal: Production-ready look-and-feel with inclusive design.
 ---
 
 ## Next work items (order of attack)
-1) Lifelines: Refine Switch Question sourcing
-   - Replace rotation with selection of a new question (no duplicates), maintain difficulty/level; reset timer and per-question state
-   - Acceptance criteria:
-     - Never repeats across a session (each served question is unique within a playthrough)
-     - Maintain level parity (replacement question matches current difficulty/tier)
-     - Graceful fallback if pool exhausted (e.g., keep current question, show friendly notice, or select closest available tier)
-2) Game engine: Difficulty scaling + per-level timing
-   - Adjust base time per level; prep scaffolding for difficulty tuning
-3) Quality gates
-   - Finalize ESLint config at repo root and add GitHub Actions CI (build, lint, typecheck)
+1) Quality gates
+  - Finalize ESLint config at repo root and add GitHub Actions CI (build, lint, typecheck) — Implemented
+2) Prize ladder checkpoints/leveling rules polish
+  - Lock-in amounts at checkpoints; update visuals
 
 ---
 

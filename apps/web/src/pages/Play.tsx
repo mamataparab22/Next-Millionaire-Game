@@ -5,11 +5,15 @@ import { Card } from '../components/Card'
 import { initialState, reducer, getCurrentQuestion } from '../game/reducer'
 import { SAMPLE_QUESTIONS } from '../game/sample'
 import { Modal } from '../components/Modal'
+import { saveResults } from '../game/storage'
+import { useNavigate } from 'react-router-dom'
 
 export function Play() {
+  const navigate = useNavigate()
   const [state, dispatch] = useReducer(reducer, initialState)
   const [showPoll, setShowPoll] = useState(false)
   const [animatePoll, setAnimatePoll] = useState(false)
+  const [pulseLevel, setPulseLevel] = useState<number | undefined>(undefined)
 
   useEffect(() => {
     dispatch({ type: 'LOAD_QUESTIONS', questions: SAMPLE_QUESTIONS })
@@ -17,6 +21,14 @@ export function Play() {
 
   const q = getCurrentQuestion(state)
   const choices = useMemo(() => q?.choices ?? [], [q])
+  const formattedWinnings = useMemo(
+    () => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(state.winnings),
+    [state.winnings]
+  )
+  const formattedSafe = useMemo(
+    () => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(state.lastSafeLevel === 0 ? 0 : state.lastSafeLevel === 5 ? 1000 : 32000),
+    [state.lastSafeLevel]
+  )
 
   // Simple timer effect: tick per second until answered or zero
   useEffect(() => {
@@ -33,17 +45,47 @@ export function Play() {
     }
   }, [state.remainingTime, state.answered])
 
+  // Navigate to results when gameOver
+  useEffect(() => {
+    if (state.gameOver) {
+      saveResults({ winnings: state.winnings, level: state.level, lastSafeLevel: state.lastSafeLevel })
+      navigate('/results')
+    }
+  }, [state.gameOver])
+
+  // Pulse the ladder when crossing a checkpoint
+  useEffect(() => {
+    if (state.lastSafeLevel > 0) {
+      setPulseLevel(state.lastSafeLevel)
+      const t = setTimeout(() => setPulseLevel(undefined), 1800)
+      return () => clearTimeout(t)
+    }
+  }, [state.lastSafeLevel])
+
   return (
     <main className="min-h-[70vh]">
       <div className="grid gap-4 md:grid-cols-[1fr_280px]">
         {/* Game Stage */}
         <section className="space-y-4">
+          {state.infoMessage && (
+            <div className="rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200">
+              {state.infoMessage}
+            </div>
+          )}
           <Card>
             <div className="space-y-3">
               <div className="flex items-center justify-between text-sm text-slate-400">
                 <p>Category: {q?.category ?? '—'}</p>
                 <p className={state.remainingTime <= 5 ? 'text-red-400 font-semibold' : ''}>
                   ⏱ {state.remainingTime}s
+                </p>
+              </div>
+              <div className="flex items-center justify-between text-xs text-slate-300">
+                <p>
+                  Current Winnings: <span className="font-semibold text-yellow-300">{formattedWinnings}</span>
+                </p>
+                <p>
+                  Safe Amount: <span className="font-semibold text-slate-200">{formattedSafe}</span>
                 </p>
               </div>
               <h1 className="text-2xl font-bold min-h-[2lh]">{q?.prompt ?? '—'}</h1>
@@ -81,6 +123,14 @@ export function Play() {
                   disabled={state.lockedChoice == null || state.answered || state.remainingTime === 0}
                 >
                   Lock in
+                </button>
+                <button
+                  className="rounded bg-slate-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 hover:bg-slate-500"
+                  onClick={() => dispatch({ type: 'WALK_AWAY' })}
+                  disabled={state.answered || state.gameOver}
+                  title="Leave now and keep your current winnings"
+                >
+                  Walk away
                 </button>
                 <button
                   className="rounded bg-slate-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
@@ -151,8 +201,8 @@ export function Play() {
           )}
         </section>
 
-        {/* Sidebar */}
-        <PrizeLadder currentLevel={state.level} />
+  {/* Sidebar */}
+  <PrizeLadder currentLevel={state.level} lastSafeLevel={state.lastSafeLevel} pulseLevel={pulseLevel} />
       </div>
     </main>
   )

@@ -8,8 +8,9 @@
   "scripts": {
     "build": "npm -ws run build",
     "dev": "npm -ws run dev",
-    "lint": "npm -ws run lint",
-    "format": "npm -ws run format",
+  "lint": "npm -ws run lint",
+  "typecheck": "npm --prefix apps/web run typecheck",
+  "format": "npm -ws run format",
     "test": "npm -ws run test"
   }
 }

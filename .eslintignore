@@ -1,0 +1,9 @@
+node_modules
+build
+dist
+coverage
+.vscode
+.next
+*.log
+apps/**/dist
+apps/**/build
