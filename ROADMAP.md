@@ -32,6 +32,9 @@ Legend: ✅ Completed · 🟡 In Progress · ⬜ TODO
   - Backend: migrated to Python FastAPI with /health, /categories, /questions
   - Frontend API integration: Play fetches questions with loading banner and fallback notice when API unavailable; Home loads categories dynamically with its own loading/fallback banners
   - Dev experience: PowerShell script dev.ps1 to run API + Vite together (sets VITE_API_BASE)
+  - Google Gemini integration: Complete LLM client implementation with GeminiClient, error handling, graceful fallbacks, and end-to-end testing
+  - CORS support: Added CORS middleware for frontend-backend communication
+  - Environment configuration: LLM_PROVIDER, GEMINI_API_KEY, GEMINI_MODEL environment variables
 - In Progress
   - Expand unit tests for lifeline edge cases, checkpoints, endgame
 - TODO (near-term)
@@ -204,13 +207,14 @@ Define a narrow, provider-agnostic interface used by the API layer:
 
 ### Roadmap checkboxes (map to phases)
 - Phase 3 (Backend):
-  - ⬜ Define optional `LLMClient` interface and factory (future)
+  - ✅ Define optional `LLMClient` interface and factory 
   - ⬜ Rate limiting, retries with backoff, and error normalization
 - Phase 4 (AI Integration):
-  - ⬜ Prompt templates + golden tests
-  - ⬜ JSON schema validation for outputs
-  - ⬜ Capability matrix documented and gaps addressed
+  - ✅ Prompt templates + JSON response handling
+  - ✅ JSON schema validation for outputs
+  - ✅ Basic error handling and graceful fallbacks
 - Phase 8 (Testing/CI):
+  - ✅ End-to-end integration tests for Gemini client
   - ⬜ Conformance tests run in CI for both adapters (stubbed for internal)
   - ⬜ Telemetry assertions (latency budgets) in smoke tests
 - Phase 9 (Release):
