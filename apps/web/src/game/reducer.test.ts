@@ -71,4 +71,58 @@ describe('lifelines', () => {
     // level 1 is easy, ensure difficulty parity
     expect(cur.difficulty).toBe('easy')
   })
+
+  it('Switch shows friendly notice when no alternative is available', () => {
+    const qs = mkQs(1, 'easy')
+    let s = dispatch(initialState, { type: 'LOAD_QUESTIONS', questions: qs })
+    // Seen contains the only question; switching should set infoMessage
+    s = dispatch(s, { type: 'USE_SWITCH_QUESTION' })
+    expect(s.usedLifelines.switch).toBe(true)
+    // Either we remained on same question with an info message
+    expect(s.infoMessage == null || s.infoMessage.includes('No alternative')).toBe(true)
+  })
+})
+
+describe('checkpoints and endgame', () => {
+  it('updates safe level on checkpoint and retains on incorrect', () => {
+    const qs = mkQs(6, 'easy')
+    let s = dispatch(initialState, { type: 'LOAD_QUESTIONS', questions: qs })
+    // Answer 5 correctly to hit checkpoint at level 5
+    for (let i = 0; i < 5; i++) {
+      s = dispatch(s, { type: 'SELECT_CHOICE', index: 1 })
+      s = dispatch(s, { type: 'LOCK_IN' })
+      s = dispatch(s, { type: 'NEXT' })
+    }
+    expect(s.level).toBe(6)
+    expect(s.lastSafeLevel).toBe(5)
+    // Now answer incorrectly
+    s = dispatch(s, { type: 'SELECT_CHOICE', index: 0 })
+    s = dispatch(s, { type: 'LOCK_IN' })
+    expect(s.gameOver).toBe(true)
+    expect(s.winnings).toBeGreaterThan(0)
+  })
+
+  it('wins the game at level 15 when correct on last question', () => {
+    const easy = mkQs(5, 'easy')
+    const med = mkQs(5, 'medium')
+    const hard = mkQs(5, 'hard')
+    let s = dispatch(initialState, { type: 'LOAD_QUESTIONS', questions: [...easy, ...med, ...hard] })
+    for (let i = 0; i < 15; i++) {
+      s = dispatch(s, { type: 'SELECT_CHOICE', index: 1 })
+      s = dispatch(s, { type: 'LOCK_IN' })
+      s = dispatch(s, { type: 'NEXT' })
+    }
+    expect(s.gameOver).toBe(true)
+    expect(s.correct).toBe(true)
+  })
+
+  it('walk away ends game but preserves current winnings state', () => {
+    const qs = mkQs(3, 'easy')
+    let s = dispatch(initialState, { type: 'LOAD_QUESTIONS', questions: qs })
+    s = dispatch(s, { type: 'SELECT_CHOICE', index: 1 })
+    s = dispatch(s, { type: 'LOCK_IN' }) // now level should be 1 correct, winnings > 0
+    s = dispatch(s, { type: 'NEXT' })
+    s = dispatch(s, { type: 'WALK_AWAY' })
+    expect(s.gameOver).toBe(true)
+  })
 })

@@ -63,8 +63,8 @@ export function Home() {
 
   return (
     <main className="min-h-screen p-6 grid place-items-center">
-      <section className="w-full max-w-3xl space-y-6 text-center">
-        <h1 className="text-4xl font-extrabold">Next Millionaire</h1>
+      <section className="w-full max-w-3xl space-y-6 text-center" aria-labelledby="home-title">
+        <h1 id="home-title" className="text-4xl font-extrabold">Next Millionaire</h1>
         <p className="text-slate-300 max-w-prose mx-auto">
           Pick one or more categories and begin your journey to $1,000,000.
         </p>
@@ -76,7 +76,7 @@ export function Home() {
             Using fallback categories (API unavailable)
           </div>
         )}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 text-left">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 text-left" role="list">
           {categories.map((c) => {
             const active = selected.includes(c)
             return (
@@ -84,6 +84,9 @@ export function Home() {
                 key={c}
                 onClick={() => toggle(c)}
                 className={`rounded border px-3 py-2 text-sm ${active ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-800 hover:bg-slate-800'}`}
+                role="listitem"
+                aria-pressed={active}
+                aria-label={`${active ? 'Deselect' : 'Select'} category ${c}`}
               >
                 {c}
               </button>
@@ -95,6 +98,8 @@ export function Home() {
             onClick={() => navigate('/play')}
             className="inline-block rounded bg-indigo-500 px-6 py-3 font-semibold hover:bg-indigo-400 disabled:opacity-50"
             disabled={!canPlay}
+            aria-disabled={!canPlay}
+            aria-label="Start playing"
           >
             Start Playing
           </button>

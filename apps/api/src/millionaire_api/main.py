@@ -1,8 +1,29 @@
 from typing import List, Optional
 from fastapi import FastAPI
+import os
+import logging
+from .llm import make_llm_client, LLMClient, LLMError
 from pydantic import BaseModel
 
 app = FastAPI(title="Next Millionaire API")
+
+logger = logging.getLogger("millionaire_api")
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "").strip().lower()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+
+llm: Optional[LLMClient] = None
+try:
+    llm = make_llm_client(LLM_PROVIDER, gemini_api_key=GEMINI_API_KEY, gemini_model=GEMINI_MODEL)
+    if llm:
+        logger.info("LLM provider initialized: %s", LLM_PROVIDER)
+    else:
+        logger.info("LLM provider not configured; using built-in generator")
+except Exception as e:
+    logger.exception("Failed to initialize LLM provider: %s", e)
+    llm = None
 
 CATEGORIES = [
     "General Knowledge",
@@ -41,7 +62,13 @@ class QuestionsResponse(BaseModel):
 
 @app.get("/health")
 async def health():
-    return {"ok": True}
+    return {
+        "ok": True,
+        "llm": {
+            "provider": LLM_PROVIDER or None,
+            "enabled": bool(llm),
+        },
+    }
 
 @app.get("/categories")
 async def categories():
@@ -52,7 +79,25 @@ async def categories():
 async def questions(req: QuestionsRequest) -> QuestionsResponse:
     picked = [c for c in (req.categories or []) if c in CATEGORIES]
     pool = picked if picked else CATEGORIES
+    total = max(1, req.count)
 
+    # Difficulty plan per level: 1-5 easy, 6-10 medium, 11-15 hard
+    difficulties: List[str] = [
+        ("easy" if (i + 1) <= 5 else ("medium" if (i + 1) <= 10 else "hard")) for i in range(total)
+    ]
+
+    # Try LLM if configured
+    if llm is not None:
+        try:
+            llm_questions = await llm.generate(categories=pool, difficulties=difficulties)
+            # Coerce into Pydantic models
+            return QuestionsResponse(questions=[Question(**q) for q in llm_questions])
+        except LLMError as e:
+            logger.warning("LLMError, falling back to built-in generator: %s", e)
+        except Exception:
+            logger.exception("Unexpected LLM failure; falling back to built-in generator")
+
+    # Built-in deterministic generator as fallback
     def mk(i: int, difficulty: str) -> Question:
         return Question(
             id=f"api-{difficulty}-{i+1}",
@@ -63,11 +108,5 @@ async def questions(req: QuestionsRequest) -> QuestionsResponse:
             correctIndex=0,
         )
 
-    out: List[Question] = []
-    total = max(1, req.count)
-    for i in range(total):
-        level = i + 1
-        diff = "easy" if level <= 5 else ("medium" if level <= 10 else "hard")
-        out.append(mk(i, diff))
-
+    out: List[Question] = [mk(i, difficulties[i]) for i in range(total)]
     return QuestionsResponse(questions=out)

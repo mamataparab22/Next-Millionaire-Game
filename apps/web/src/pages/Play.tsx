@@ -152,7 +152,7 @@ export function Play() {
   ])
 
   return (
-    <main className="min-h-[70vh]">
+  <main className="min-h-[70vh]" aria-describedby={state.infoMessage ? 'info-message' : undefined}>
       <div className="grid gap-4 md:grid-cols-[1fr_280px]">
   {pulseLevel && <ConfettiBurst pieces={90} />}
         {loadingQs && (
@@ -168,7 +168,7 @@ export function Play() {
         {/* Game Stage */}
         <section className="space-y-4">
           {state.infoMessage && (
-            <div className="rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200">
+            <div id="info-message" role="status" aria-live="polite" className="rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200">
               {state.infoMessage}
             </div>
           )}
@@ -190,7 +190,7 @@ export function Play() {
               </div>
               <h1 className="text-2xl font-bold min-h-[2lh]">{q?.prompt ?? '—'}</h1>
               <div className="grid gap-2 sm:grid-cols-2">
-                {choices.map((c, i) => {
+        {choices.map((c, i) => {
                   const eliminated = state.eliminatedChoices.includes(i)
                   if (eliminated) return null // 50:50 hides eliminated options completely
                   const isLocked = state.lockedChoice === i
@@ -210,6 +210,9 @@ export function Play() {
                       disabled={showResult || state.remainingTime === 0}
                       onClick={() => dispatch({ type: 'SELECT_CHOICE', index: i })}
                       className={base + (showResult ? resultStyles : enabledStyles) + (isLocked ? ' ' + lockedStyles : '')}
+          aria-pressed={isLocked}
+          aria-disabled={showResult || state.remainingTime === 0}
+          aria-label={`Answer ${String.fromCharCode(65 + i)}: ${c}`}
                     >
                       {String.fromCharCode(65 + i)}) {c}
                     </button>
@@ -221,6 +224,7 @@ export function Play() {
                   className="rounded bg-yellow-400 px-4 py-2 text-sm font-semibold text-slate-900 disabled:opacity-60 shadow hover:bg-yellow-300 focus:outline-none focus:ring-2 focus:ring-yellow-300"
                   onClick={() => dispatch({ type: 'LOCK_IN' })}
                   disabled={state.lockedChoice == null || state.answered || state.remainingTime === 0}
+                  aria-disabled={state.lockedChoice == null || state.answered || state.remainingTime === 0}
                 >
                   Lock in
                 </button>
@@ -229,6 +233,7 @@ export function Play() {
                   onClick={() => dispatch({ type: 'WALK_AWAY' })}
                   disabled={state.answered || state.gameOver}
                   title="Leave now and keep your current winnings"
+                  aria-disabled={state.answered || state.gameOver}
                 >
                   Walk away
                 </button>
@@ -236,6 +241,7 @@ export function Play() {
                   className="rounded bg-slate-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
                   onClick={() => dispatch({ type: 'NEXT' })}
                   disabled={!state.answered}
+                  aria-disabled={!state.answered}
                 >
                   Next
                 </button>
@@ -267,16 +273,17 @@ export function Play() {
           />
 
           {showPoll && state.pollResults && (
-            <Modal onClose={() => { setAnimatePoll(false); setShowPoll(false) }}>
+            <Modal onClose={() => { setAnimatePoll(false); setShowPoll(false) }} ariaLabelledby="poll-title">
               <div className="space-y-4">
                 <div className="flex items-start justify-between">
-                  <h3 className="text-lg font-bold">Audience Poll</h3>
+                  <h3 id="poll-title" className="text-lg font-bold">Audience Poll</h3>
                   <button
                     className="rounded bg-slate-800 px-2 py-1 text-xs hover:bg-slate-700"
                     onClick={() => {
                       setAnimatePoll(false)
                       setShowPoll(false)
                     }}
+                    aria-label="Close poll"
                   >
                     Close
                   </button>
@@ -295,6 +302,8 @@ export function Play() {
                               height: animatePoll ? `${value}%` : '0%',
                               transitionDelay: `${i * 60}ms`,
                             }}
+                            role="img"
+                            aria-label={`Audience confidence for ${String.fromCharCode(65 + i)} is ${value} percent`}
                           />
                         </div>
                         <div className="mt-1 text-center text-xs text-slate-300">

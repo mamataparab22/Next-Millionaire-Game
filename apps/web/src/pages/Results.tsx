@@ -11,11 +11,13 @@ export function Results() {
 
   return (
     <main className="min-h-screen p-6 grid place-items-center">
-      <section className="space-y-4 text-center">
-        <h1 className="text-3xl font-bold">Results</h1>
+      <section className="space-y-4 text-center" aria-labelledby="results-title">
+        <h1 id="results-title" className="text-3xl font-bold">Results</h1>
         <p className="text-slate-300">You finished at level {level}. Your guaranteed checkpoint was level {lastSafeLevel}.</p>
         <p className="text-2xl font-extrabold text-yellow-400">Final Winnings: {formatted}</p>
-        <a href="/play" className="inline-block rounded bg-indigo-500 px-6 py-3 font-semibold hover:bg-indigo-400">Play Again</a>
+        <a href="/play" className="inline-block rounded bg-indigo-500 px-6 py-3 font-semibold hover:bg-indigo-400" aria-label="Play again">
+          Play Again
+        </a>
       </section>
     </main>
   )

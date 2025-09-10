@@ -23,9 +23,9 @@ const DEFAULT_LADDER: LadderItem[] = [
 
 export function PrizeLadder({ currentLevel = 1, lastSafeLevel = 0, pulseLevel, ladder = DEFAULT_LADDER }: { currentLevel?: number; lastSafeLevel?: number; pulseLevel?: number; ladder?: LadderItem[] }) {
   return (
-    <aside className="rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm">
-      <h2 className="mb-2 text-center text-xs font-semibold tracking-wide text-slate-300">Prize Ladder</h2>
-      <ol className="space-y-1">
+    <aside className="rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm" aria-labelledby="ladder-heading">
+      <h2 id="ladder-heading" className="mb-2 text-center text-xs font-semibold tracking-wide text-slate-300">Prize Ladder</h2>
+      <ol className="space-y-1" aria-live="polite">
         {ladder.map((item) => {
           const isCurrent = item.level === currentLevel
           const isCheckpoint = item.level === 5 || item.level === 10
@@ -43,6 +43,8 @@ export function PrizeLadder({ currentLevel = 1, lastSafeLevel = 0, pulseLevel, l
         (achievedCheckpoint ? ' ring-1 ring-yellow-400/60' : '') +
         (pulseLevel === item.level ? ' checkpoint-pulse' : '')
               }
+              aria-current={isCurrent ? 'step' : undefined}
+              aria-label={`Level ${item.level}${isCheckpoint ? ' checkpoint' : ''}: ${item.amount}${isCurrent ? ' current level' : ''}`}
             >
               <span className={
                 'tabular-nums ' + (isCheckpoint ? 'after:ml-1 after:content-["★"] after:text-yellow-400' : '')
