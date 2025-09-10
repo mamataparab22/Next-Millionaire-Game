@@ -38,7 +38,7 @@ Next Millionaire Game is an interactive web-based quiz application that recreate
 ## 🚀 Getting Started
 
 ### Prerequisites
-- Node.js (v16 or higher)
+- Python 3.10+ (for backend)
 - npm or pnpm
 - Modern web browser
 
@@ -80,9 +80,10 @@ MAX_QUESTIONS=15
 
 ### Tech Stack
 - **Frontend**: React + Vite + TypeScript + Tailwind CSS
+- **API**: FastAPI (apps/api) to serve questions (stubbed now; LLM later)
 - **Audio**: Howler.js for sound effects and music
 - **Voice**: Web Speech API / TTS for AI host
-- **Backend**: Node.js + Express (API proxy)
+- **Backend**: Python + FastAPI
 - **State Management**: React Reducer or XState
 - **Real-time**: Socket.IO for live audience poll animations
 
@@ -96,7 +97,7 @@ next-millionaire/
 │   │   │   ├── state/
 │   │   │   └── sfx/
 │   │   └── vite.config.ts
-│   └── api/                 # Express backend
+│   └── api/                 # FastAPI backend
 │       ├── src/
 │       │   ├── routes/
 │       │   └── llm/
@@ -135,9 +136,24 @@ The game leverages several AI capabilities:
 
 ### Running Tests
 ```bash
-npm test
-# or
-pnpm test
+npm --prefix apps/web run test
+```
+
+### API (local)
+Python FastAPI backend lives in `apps/api`.
+
+```powershell
+# Windows PowerShell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -e .
+api-dev
+```
+
+Set the web app to use your API by adding to `apps/web/.env`:
+```
+VITE_API_BASE=http://localhost:5177
 ```
 
 ### Building for Production

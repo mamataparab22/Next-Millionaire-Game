@@ -5,7 +5,8 @@ import { Card } from '../components/Card'
 import { initialState, reducer, getCurrentQuestion } from '../game/reducer'
 import { SAMPLE_QUESTIONS } from '../game/sample'
 import { Modal } from '../components/Modal'
-import { saveResults } from '../game/storage'
+import { ConfettiBurst } from '../components/ConfettiBurst'
+import { saveResults, saveSession, loadSession, clearSession } from '../game/storage'
 import { useNavigate } from 'react-router-dom'
 
 export function Play() {
@@ -14,9 +15,50 @@ export function Play() {
   const [showPoll, setShowPoll] = useState(false)
   const [animatePoll, setAnimatePoll] = useState(false)
   const [pulseLevel, setPulseLevel] = useState<number | undefined>(undefined)
+  const [loadingQs, setLoadingQs] = useState(false)
+  const [usedFallback, setUsedFallback] = useState(false)
 
   useEffect(() => {
-    dispatch({ type: 'LOAD_QUESTIONS', questions: SAMPLE_QUESTIONS })
+    const snapshot = loadSession()
+    if (snapshot?.state && Array.isArray(snapshot.state.questions) && snapshot.state.questions.length > 0) {
+      dispatch({ type: 'HYDRATE', state: snapshot.state })
+      setLoadingQs(false)
+      setUsedFallback(false)
+      return
+    }
+    // Try API first; fallback to bundled samples
+    const controller = new AbortController()
+    const base = import.meta.env.VITE_API_BASE as string | undefined
+    const categories = (sessionStorage.getItem('nm.categories') || '')
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)
+    if (!base) {
+      setUsedFallback(true)
+      dispatch({ type: 'LOAD_QUESTIONS', questions: SAMPLE_QUESTIONS })
+      return
+    }
+    setLoadingQs(true)
+    fetch(`${base}/questions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ categories, count: 15 }),
+      signal: controller.signal,
+    })
+      .then(async (r) => {
+        if (!r.ok) throw new Error('Bad response')
+        const data = await r.json()
+        if (!Array.isArray(data?.questions) || data.questions.length === 0) throw new Error('No questions')
+        dispatch({ type: 'LOAD_QUESTIONS', questions: data.questions })
+        setUsedFallback(false)
+        setLoadingQs(false)
+      })
+      .catch(() => {
+        dispatch({ type: 'LOAD_QUESTIONS', questions: SAMPLE_QUESTIONS })
+        setUsedFallback(true)
+        setLoadingQs(false)
+      })
+    return () => controller.abort()
   }, [])
 
   const q = getCurrentQuestion(state)
@@ -49,6 +91,7 @@ export function Play() {
   useEffect(() => {
     if (state.gameOver) {
       saveResults({ winnings: state.winnings, level: state.level, lastSafeLevel: state.lastSafeLevel })
+  clearSession()
       navigate('/results')
     }
   }, [state.gameOver])
@@ -57,14 +100,71 @@ export function Play() {
   useEffect(() => {
     if (state.lastSafeLevel > 0) {
       setPulseLevel(state.lastSafeLevel)
-      const t = setTimeout(() => setPulseLevel(undefined), 1800)
+      const t = setTimeout(() => setPulseLevel(undefined), 3800) // 1.2s * 3 ~ 3.6s + buffer
       return () => clearTimeout(t)
     }
   }, [state.lastSafeLevel])
 
+  // Sound cue for checkpoints (Web Audio API)
+  useEffect(() => {
+    if (state.lastSafeLevel > 0) {
+      try {
+        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+        const o = ctx.createOscillator()
+        const g = ctx.createGain()
+        o.type = 'sine'
+        // a simple two-tone chime
+        const now = ctx.currentTime
+        o.frequency.setValueAtTime(880, now)
+        o.frequency.setValueAtTime(1318.5, now + 0.12)
+        g.gain.setValueAtTime(0.0001, now)
+        g.gain.exponentialRampToValueAtTime(0.2, now + 0.02)
+        g.gain.exponentialRampToValueAtTime(0.0001, now + 0.5)
+        o.connect(g)
+        g.connect(ctx.destination)
+        o.start(now)
+        o.stop(now + 0.55)
+      } catch {}
+    }
+  }, [state.lastSafeLevel])
+
+  // Autosave session snapshot (exclude UI-only fields)
+  useEffect(() => {
+    if (state.questions.length > 0 && !state.gameOver) {
+      const { infoMessage, ...rest } = state as any
+      saveSession(rest)
+    }
+  }, [
+    state.level,
+    state.currentQuestionIndex,
+    state.usedLifelines,
+    state.seenQuestionIds,
+    state.eliminatedChoices,
+    state.lockedChoice,
+    state.answered,
+    state.correct,
+    state.pollResults,
+    state.remainingTime,
+    state.questions,
+    state.winnings,
+    state.lastSafeLevel,
+    state.gameOver,
+  ])
+
   return (
     <main className="min-h-[70vh]">
       <div className="grid gap-4 md:grid-cols-[1fr_280px]">
+  {pulseLevel && <ConfettiBurst pieces={90} />}
+        {loadingQs && (
+          <div className="col-span-full rounded border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-slate-200">
+            Loading questions...
+          </div>
+        )}
+        {usedFallback && !loadingQs && (
+          <div className="col-span-full rounded border border-amber-700 bg-amber-900/40 px-3 py-2 text-xs text-amber-200">
+            Using sample questions (API unavailable)
+          </div>
+        )}
         {/* Game Stage */}
         <section className="space-y-4">
           {state.infoMessage && (
@@ -138,6 +238,15 @@ export function Play() {
                   disabled={!state.answered}
                 >
                   Next
+                </button>
+                <button
+                  className="ml-auto text-xs underline text-slate-400 hover:text-slate-200"
+                  onClick={() => {
+                    clearSession()
+                    window.location.reload()
+                  }}
+                >
+                  New Game
                 </button>
               </div>
             </div>

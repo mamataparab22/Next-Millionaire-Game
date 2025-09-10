@@ -25,12 +25,18 @@ Legend: ✅ Completed · 🟡 In Progress · ⬜ TODO
   - Audience Poll: implemented as dismissible modal with vertical bar chart; filters to remaining options; animated bars; ESC-to-close and focus trap
   - Per-question timer: countdown in UI, auto-fail on timeout; disables interactions
   - Switch Question: refined sourcing implemented; picks unseen question matching current difficulty when available, falls back gracefully; resets timer/state; friendly notice if none
+  - Difficulty scaling + per-level timing (easy/medium/hard mapped to levels 1–5/6–10/11–15)
+  - Quality gates: root ESLint/Prettier and GitHub Actions CI (lint, typecheck, build)
+  - Prize ladder: checkpoints (5, 10), safe winnings, game-over flow, and display on Results page
+  - UX polish: checkpoint pulse animation, confetti burst, and chime on crossing checkpoints
+  - Walk away: keep current winnings and end game
 - In Progress
   - Coding standards (ESLint config partially set), accessibility pass (broader app)
   - Game progression polish (ladder checkpoints/leveling rules)
 - TODO (near-term)
-  - Difficulty scaling and per-level timing tweaks
-  - Formalize ESLint/Prettier config and add CI
+  - Session persistence: resume game after refresh (local/session storage)
+  - Tests for lifeline edge cases and ladder rules
+  - Accessibility sweep and ARIA landmarks
 
 ---
 
@@ -128,10 +134,15 @@ Goal: Production-ready look-and-feel with inclusive design.
 ---
 
 ## Next work items (order of attack)
-1) Quality gates
-  - Finalize ESLint config at repo root and add GitHub Actions CI (build, lint, typecheck) — Implemented
-2) Prize ladder checkpoints/leveling rules polish
-  - Lock-in amounts at checkpoints; update visuals
+1) Game engine: Session persistence (resume after refresh)
+  - Acceptance criteria:
+    - If a saved session exists and isn’t finished, Play resumes exactly where you left off (timer, level, question state, lifelines)
+    - “New Game” clears saved session and starts fresh
+    - Storage is versioned to allow safe future migrations
+2) Testing & reliability
+  - Add unit tests for lifelines (50:50 elimination correctness; audience poll after 50:50; switch uniqueness) and ladder rules
+3) Accessibility sweep
+  - Landmarks, focus management, and key nav across Play and modals
 
 ---
 

@@ -46,3 +46,4 @@ export type GameAction =
   | { type: 'TIME_UP' }
   | { type: 'RESET' }
   | { type: 'WALK_AWAY' }
+  | { type: 'HYDRATE'; state: GameState }

@@ -21,6 +21,12 @@ export const initialState: GameState = {
 
 export function reducer(state: GameState, action: GameAction): GameState {
   switch (action.type) {
+    case 'HYDRATE': {
+      const next = action.state
+      const maxTime = timeForLevel(next.level)
+      const safeTime = Math.max(0, Math.min(next.remainingTime ?? maxTime, maxTime))
+      return { ...next, remainingTime: safeTime }
+    }
     case 'LOAD_QUESTIONS': {
       const qs = action.questions
   return {

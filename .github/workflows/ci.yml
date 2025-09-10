@@ -30,3 +30,6 @@ jobs:
 
       - name: Build (web)
         run: npm --prefix apps/web run build
+      
+      - name: Test (web)
+        run: npm --prefix apps/web run test
