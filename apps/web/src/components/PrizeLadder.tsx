@@ -35,9 +35,9 @@ export function PrizeLadder({ currentLevel = 1, ladder = DEFAULT_LADDER }: { cur
               className={
                 'flex items-center justify-between rounded px-2 py-1 ' +
                 (isCurrent
-                  ? 'bg-indigo-600 text-white'
+                  ? 'bg-yellow-400 text-slate-900 font-bold shadow'
                   : isCheckpoint
-                  ? 'bg-slate-800 text-slate-100'
+                  ? 'bg-slate-800 text-yellow-300 font-semibold'
                   : 'text-slate-300')
               }
             >

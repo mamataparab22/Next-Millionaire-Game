@@ -13,23 +13,45 @@ Legend: ✅ Completed · 🟡 In Progress · ⬜ TODO
 
 ---
 
+## Progress snapshot — 2025-09-10
+
+- Completed
+  - Repo layout established (workspaces) and web app scaffolded (Vite + React + TS + Tailwind)
+  - App shell and routing (Header, Layout, Home/Play/Results, NotFound)
+  - UI atoms: Button, Card, Modal; theme switched to yellow accents
+  - Prize Ladder component and basic highlight logic
+  - Minimal game state (types, reducer), wired to Play; sample questions
+  - Lifeline 50:50: implemented, hides two wrong answers, disables after use
+  - Audience Poll: implemented as dismissible modal with vertical bar chart; filters to remaining options; animated bars; ESC-to-close and focus trap
+  - Per-question timer: countdown in UI, auto-fail on timeout; disables interactions
+  - Switch Question: basic rotation implemented; resets timer/state
+- In Progress
+  - Coding standards (ESLint config partially set), accessibility pass (broader app)
+  - Game progression polish (ladder checkpoints/leveling rules)
+- TODO (near-term)
+  - Refine Switch Question sourcing (fetch new question, avoid duplicates, preserve difficulty/level)
+  - Difficulty scaling and per-level timing tweaks
+  - Formalize ESLint/Prettier config and add CI
+
+---
+
 ## Phase 0 — Planning & Project Scaffolding
 Goal: Establish foundations and shared conventions.
 
 ### Completed ✅
 - Draft project vision and features in `README.md`
 - Create development roadmap (`ROADMAP.md`)
+- Choose repo layout (monorepo with npm workspaces)
+- Prettier baseline (`.prettierrc`)
 
 ### In Progress 🟡
-- —
+- Define coding standards: TypeScript strictness (enabled in web), ESLint rules (partial)
+- Decide on state model: Reducer chosen and implemented minimally
 
 ### TODO ⬜
-- Choose repo layout (monorepo vs. multi-app folders) consistent with README structure
-- Define coding standards: TypeScript strictness, ESLint + Prettier rules
-- Decide on state model: Reducer vs. XState (align with README)
 - Define semantic commit and PR guidelines
-- Add issue/PR templates and labels (Bugs, Feature, Docs, Good First Issue)
-- Add `LICENSE` and `CODE_OF_CONDUCT.md` if not present
+- Add issue/PR templates and labels
+- Add `LICENSE` and `CODE_OF_CONDUCT.md`
 
 ---
 
@@ -37,19 +59,18 @@ Goal: Establish foundations and shared conventions.
 Goal: Boot a minimal, accessible shell of the game UI.
 
 ### Completed ✅
-- —
+- Scaffold `apps/web` with Vite (React + TypeScript)
+- Configure Tailwind CSS and base theme (yellow accent)
+- App shell: Header, Layout, Footer area (via Layout container)
+- Route structure: `/`, `/play`, `/results`, fallback 404
+- Shared UI atoms: Button, Card, Modal, Prize Ladder
+- Responsive layout for Play (stage + sidebar)
 
 ### In Progress 🟡
-- —
+- Accessibility: focus styles, keyboard nav, ARIA landmarks
 
 ### TODO ⬜
-- Scaffold `apps/web` with Vite (React + TypeScript)
-- Configure Tailwind CSS and base theme (colors, typography)
-- App shell: header, main game stage, sidebar (lifelines), footer
-- Route structure: `/` (home), `/play`, `/results`
-- Implement responsive layout (mobile-first)
-- Set up shared UI atoms: Button, Card, Modal, Progress/Prize Ladder
-- Accessibility: focus styles, keyboard nav, ARIA landmarks
+- Additional polish and loading states
 
 ---
 
@@ -57,62 +78,18 @@ Goal: Boot a minimal, accessible shell of the game UI.
 Goal: Deterministic, testable game state and transitions.
 
 ### Completed ✅
-- —
+- Define domain models (Question, GameState, Lifeline flags)
+- Implement reducer: select, lock-in, next; 50:50 logic; current level updates
+- Wire state to UI (Play page); sample question data
+- Timer service: per-question countdown, auto TIME_UP → incorrect; UI countdown
 
 ### In Progress 🟡
-- —
+- Prize ladder progression and checkpoints (baseline present; refine rules)
 
 ### TODO ⬜
-- Define domain models: Category, Question, Answer, Lifeline, GameState
-- Choose and implement state management (Reducer or XState)
-- Prize ladder config and progression logic (checkpoints)
-- Timer service with per-question time rules (shorter early questions)
 - Question queue management and difficulty scaling
 - Persistence for session (resume after refresh)
-- Error states and recovery (e.g., API failure → safe fallback)
-
----
-
-## Phase 3 — Backend API (Express) & Env Config
-Goal: Secure API surface for question generation/validation and web proxying.
-
-### Completed ✅
-- —
-
-### In Progress 🟡
-- —
-
-### TODO ⬜
-- Scaffold `apps/api` with Express + TypeScript
-- Env handling via `.env` and schema validation (zod or env-var)
-- Endpoints:
-  - `POST /llm/generate` — generate question set by categories + difficulty
-  - `POST /llm/validate` — validate answers/questions for consistency
-- LLM client abstraction (provider-agnostic)
-- Rate limiting and input validation
-- Error handling and structured logs
-- Local dev proxy for web app; CORS config
-- Unit tests for routes and llm client
-
----
-
-## Phase 4 — AI Integration & Content Safety
-Goal: High-quality, safe question generation aligned with categories and difficulty.
-
-### Completed ✅
-- —
-
-### In Progress 🟡
-- —
-
-### TODO ⬜
-- Prompt templates for generation and validation (few-shot + rules)
-- Difficulty calibration: easy/medium/hard distributions per level
-- Category coverage and deduplication
-- Current events support (last 12 months) via web search API ("Ask Web")
-- Content moderation and safe words filtering
-- Deterministic answer encoding (e.g., lettered choices with single truth)
-- Telemetry for rejected/low-quality prompts
+- Error states and recovery
 
 ---
 
@@ -120,35 +97,17 @@ Goal: High-quality, safe question generation aligned with categories and difficu
 Goal: Implement classic lifelines governed by game rules.
 
 ### Completed ✅
-- —
+- 50:50 — removes two incorrect answers; disables once used; reflected in UI
+- Audience Poll — dismissible modal; vertical bars; filters to non-eliminated options; animated; ESC/Focus trap
+- Switch Question — basic rotation to next question; resets timer/state
 
 ### In Progress 🟡
 - —
 
 ### TODO ⬜
-- 50:50 — remove two incorrect answers (state + UI)
-- Audience Poll — animated results; non-network and Socket.IO real-time variant
-- Switch Question — replace current question; preserve difficulty curve
-- Enforce per-level availability and single-use constraints
-- Tests: edge cases (e.g., already used, no alternatives available)
-
----
-
-## Phase 6 — Audio & Voice
-Goal: Authentic show feel through music, SFX, and spoken host.
-
-### Completed ✅
-- —
-
-### In Progress 🟡
-- —
-
-### TODO ⬜
-- Integrate Howler.js with a central AudioManager
-- Background music loops and transitions
-- SFX triggers for correct/incorrect/lock-in/tension
-- Web Speech API / TTS integration for host narration (with user controls)
-- Fallbacks for browsers without TTS; mute/volume settings persisted
+- Refine Switch sourcing — fetch a truly new question (not yet seen), avoid duplicates, preserve difficulty curve; clear lifeline state as needed
+- Enforce per-level availability if rules demand
+- Tests for lifeline edge cases
 
 ---
 
@@ -156,92 +115,30 @@ Goal: Authentic show feel through music, SFX, and spoken host.
 Goal: Production-ready look-and-feel with inclusive design.
 
 ### Completed ✅
-- —
+- Theme accents updated to yellow to match show feel
+- Modal entrance animation (fade/scale) and poll bar grow animations
+- Modal accessibility: focus trap and ESC-to-close
 
 ### In Progress 🟡
-- —
+- Broader accessibility sweep (focus management across pages, ARIA landmarks)
 
 ### TODO ⬜
-- Visual polish: animations, micro-interactions, suspense moments
-- Prize ladder highlight and checkpoint visuals
-- Category selection UX (choose 5 of N)
-- Loading states and skeletons for API calls
-- WCAG AA: color contrast, screen reader cues, focus management
+- Prize ladder checkpoint visuals improvement, micro-interactions
+- Loading/skeleton states for API calls (future)
 
 ---
 
-## Phase 8 — Testing, QA, and Tooling
-Goal: Confidence through automated checks and quality gates.
-
-### Completed ✅
-- —
-
-### In Progress 🟡
-- —
-
-### TODO ⬜
-- Unit tests: reducers/XState, utility functions, audio manager
-- API tests: route handlers, prompt builder, validators
-- E2E tests: Playwright or Cypress happy-path + lifelines
-- Linting (ESLint) and formatting (Prettier) scripts
-- Git hooks (pre-commit lint/test via Husky)
-- GitHub Actions CI: build, lint, test, typecheck
-
----
-
-## Phase 9 — Build, Release, and Deployment
-Goal: Ship to users with reliable environments.
-
-### Completed ✅
-- —
-
-### In Progress 🟡
-- —
-
-### TODO ⬜
-- Production builds for web (Vite) and API
-- Env strategy for prod/secrets (keys, URLs)
-- Deployment targets:
-  - Web: Vercel/Netlify
-  - API: Render/Fly/Heroku (or serverless)
-- Observability: basic logs + error tracking (Sentry)
-- Release notes and versioning (Keep a Changelog)
-- Smoke tests post-deploy
-
----
-
-## Phase 10 — Enhancements & Stretch Goals
-Goal: Delight users and extend capabilities.
-
-### Completed ✅
-- —
-
-### In Progress 🟡
-- —
-
-### TODO ⬜
-- Localization and i18n for questions/UI
-- Save/Resume, profiles, and leaderboards
-- Achievements and streaks
-- Admin tools: seed curated questions, moderate content
-- Analytics (privacy-respecting): engagement, difficulty tuning
-
----
-
-## Milestones & Suggested Sequencing
-1) MVP (Phases 1–3, parts of 4 and 2): playable game with local generation stub
-2) Show Feel (Phase 6 + select 7): audio/voice and polish
-3) Lifelines (Phase 5): complete feature parity
-4) Quality & Launch (Phases 8–9): tests, CI, deploy
-5) Stretch (Phase 10): advanced features
-
----
-
-## Links
-- Vision & features: `README.md`
-- This plan: `ROADMAP.md`
-
-> Keep commits small, ship iteratively, and update statuses after every PR.
+## Next work items (order of attack)
+1) Lifelines: Refine Switch Question sourcing
+   - Replace rotation with selection of a new question (no duplicates), maintain difficulty/level; reset timer and per-question state
+   - Acceptance criteria:
+     - Never repeats across a session (each served question is unique within a playthrough)
+     - Maintain level parity (replacement question matches current difficulty/tier)
+     - Graceful fallback if pool exhausted (e.g., keep current question, show friendly notice, or select closest available tier)
+2) Game engine: Difficulty scaling + per-level timing
+   - Adjust base time per level; prep scaffolding for difficulty tuning
+3) Quality gates
+   - Finalize ESLint config at repo root and add GitHub Actions CI (build, lint, typecheck)
 
 ---
 
