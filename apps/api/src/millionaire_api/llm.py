@@ -6,6 +6,11 @@ import asyncio
 import aiohttp
 from typing import Any, Dict, List, Optional, TypedDict
 
+# Hardcoded Gemini configuration: update API key here to enable Gemini globally
+DEFAULT_GEMINI_MODEL = "gemini-1.5-flash"
+# Replace the empty string with your real API key to hardcode it
+HARDCODED_GEMINI_API_KEY = "AIzaSyDB-dJpfxL_TumbuOavtn1-lNui339o2JQ"
+
 
 class LLMError(Exception):
     pass
@@ -17,7 +22,7 @@ class LLMClient:
 
 
 class GeminiClient(LLMClient):
-    def __init__(self, api_key: str, model: str = "gemini-1.5-flash") -> None:
+    def __init__(self, api_key: str, model: str = DEFAULT_GEMINI_MODEL) -> None:
         if not api_key:
             raise ValueError("GEMINI_API_KEY is required")
         self.api_key = api_key
@@ -129,5 +134,8 @@ def make_llm_client(provider: str, *, gemini_api_key: Optional[str] = None, gemi
     if provider in ("", "none"):
         return None
     if provider == "gemini":
-        return GeminiClient(api_key=gemini_api_key or "", model=gemini_model or "gemini-1.5-flash")
+        # Prefer hardcoded API key if provided; fall back to passed/env value
+        final_key = HARDCODED_GEMINI_API_KEY or (gemini_api_key or "")
+        final_model = gemini_model or DEFAULT_GEMINI_MODEL
+        return GeminiClient(api_key=final_key, model=final_model)
     raise ValueError(f"Unknown LLM provider: {provider}")

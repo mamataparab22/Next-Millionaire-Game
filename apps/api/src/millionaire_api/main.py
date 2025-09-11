@@ -20,7 +20,8 @@ app.add_middleware(
 logger = logging.getLogger("millionaire_api")
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "").strip().lower()
+# Hardcode LLM provider to Gemini. Model/API key can still come from env or llm.py defaults.
+LLM_PROVIDER = "gemini"
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 

@@ -36,18 +36,18 @@ export function PrizeLadder({ currentLevel = 1, lastSafeLevel = 0, pulseLevel, l
               className={
                 'flex items-center justify-between rounded px-2 py-1 transition-colors ' +
                 (isCurrent
-                  ? 'bg-yellow-400 text-slate-900 font-bold shadow'
+      ? 'nm-gradient-bg text-slate-900 font-bold shadow'
                   : isCheckpoint
-                  ? 'bg-slate-800 text-yellow-300 font-semibold'
+      ? 'bg-slate-800 text-amber-300 font-semibold'
                   : 'text-slate-300') +
-        (achievedCheckpoint ? ' ring-1 ring-yellow-400/60' : '') +
+  (achievedCheckpoint ? ' ring-1 ring-amber-400/60' : '') +
         (pulseLevel === item.level ? ' checkpoint-pulse' : '')
               }
               aria-current={isCurrent ? 'step' : undefined}
               aria-label={`Level ${item.level}${isCheckpoint ? ' checkpoint' : ''}: ${item.amount}${isCurrent ? ' current level' : ''}`}
             >
               <span className={
-                'tabular-nums ' + (isCheckpoint ? 'after:ml-1 after:content-["★"] after:text-yellow-400' : '')
+    'tabular-nums ' + (isCheckpoint ? 'after:ml-1 after:content-["★"] after:text-amber-400' : '')
               }>
                 {item.level.toString().padStart(2, '0')}
               </span>

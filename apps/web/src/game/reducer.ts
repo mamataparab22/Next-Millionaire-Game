@@ -33,8 +33,8 @@ export function reducer(state: GameState, action: GameAction): GameState {
         ...initialState,
         questions: qs,
         remainingTime: timeForLevel(1),
-  // mark the first question as seen if present
-  seenQuestionIds: qs[0] ? [qs[0].id] : [],
+        // mark the first question as seen if present
+        seenQuestionIds: qs[0] ? [qs[0].id] : [],
       }
     }
     case 'SELECT_CHOICE': {

@@ -4,17 +4,31 @@
 
 :root { color-scheme: dark; }
 
+/* App gradient tokens */
+.nm-gradient-bg {
+	background-image: linear-gradient(to right, #fbbf24, #f59e0b, #f97316); /* amber-400 → amber-500 → orange-500 */
+}
+.nm-gradient-bg:hover {
+	background-image: linear-gradient(to right, #fcd34d, #fbbf24, #fb923c); /* amber-300 → amber-400 → orange-400 */
+}
+.nm-gradient-text {
+	background-image: linear-gradient(to right, #fcd34d, #fb923c); /* amber-300 → orange-400 */
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+}
+
 @keyframes checkpoint-pulse {
 	0% {
-		box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.85), 0 0 12px 2px rgba(250, 204, 21, 0.45);
+		box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.85), 0 0 12px 2px rgba(251, 191, 36, 0.45); /* amber-400 */
 		transform: scale(1);
 	}
 	40% {
-		box-shadow: 0 0 0 12px rgba(250, 204, 21, 0), 0 0 28px 8px rgba(250, 204, 21, 0.6);
+		box-shadow: 0 0 0 12px rgba(251, 191, 36, 0), 0 0 28px 8px rgba(251, 191, 36, 0.6);
 		transform: scale(1.06);
 	}
 	100% {
-		box-shadow: 0 0 0 0 rgba(250, 204, 21, 0), 0 0 0 0 rgba(250, 204, 21, 0);
+		box-shadow: 0 0 0 0 rgba(251, 191, 36, 0), 0 0 0 0 rgba(251, 191, 36, 0);
 		transform: scale(1);
 	}
 }
@@ -45,4 +59,28 @@
 	animation-name: confetti-fall;
 	animation-timing-function: ease-out;
 	animation-fill-mode: both;
+}
+
+/* Shimmer skeleton */
+@keyframes shimmer {
+	0% { background-position: -500px 0; }
+	100% { background-position: 500px 0; }
+}
+
+.skeleton {
+	position: relative;
+	overflow: hidden;
+	background-color: rgb(30 41 59 / 0.9); /* slate-800/90 */
+}
+
+.skeleton::after {
+	content: '';
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-image: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,0.12), rgba(255,255,255,0));
+	background-size: 500px 100%;
+	animation: shimmer 1.2s infinite;
 }
