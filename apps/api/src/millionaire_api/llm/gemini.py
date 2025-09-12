@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import aiohttp
 from typing import Any, Dict, List
+import secrets
 
 from . import LLMClient, LLMError
 
@@ -20,6 +21,7 @@ class GeminiClient(LLMClient):
         self.endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
 
     def _build_prompt(self, categories: List[str], difficulties: List[str]) -> Dict[str, Any]:
+        nonce = secrets.token_hex(8)
         instructions = (
             "You are generating multiple-choice trivia questions for a 'Who Wants to Be a Millionaire' style game. "
             "Return strictly valid JSON, no markdown. Each question must have 4 choices and exactly one correct index. "
@@ -28,6 +30,7 @@ class GeminiClient(LLMClient):
         payload = {
             "categories": categories,
             "difficulties": difficulties,
+            "nonce": nonce,
         }
         return {
             "contents": [
@@ -36,6 +39,7 @@ class GeminiClient(LLMClient):
                         {
                             "text": (
                                 instructions
+                                + " Always produce a fresh, non-repetitive set of questions when the nonce changes."
                                 + "\n\nInput:\n"
                                 + json.dumps(payload)
                                 + "\n\nOutput JSON schema:\n{\n  \"questions\": [ { \"id\": string, \"category\": string, \"difficulty\": string, \"prompt\": string, \"choices\": string[4], \"correctIndex\": number } ]\n}\n"
@@ -46,7 +50,7 @@ class GeminiClient(LLMClient):
                 }
             ],
             "generationConfig": {
-                "temperature": 0.7,
+                "temperature": 0.9,
                 "maxOutputTokens": 2048,
                 "responseMimeType": "application/json",
             },

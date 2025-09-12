@@ -21,11 +21,32 @@ Endpoints:
 - GET /categories -> { categories: string[] }
 - POST /questions { categories?: string[], count?: number } -> { questions: Question[] }
 
+## 🤖 Default: OpenAI integration
+
+By default the API uses OpenAI (or OpenAI-compatible) providers. Set your key and optionally override the model or base URL.
+
+Windows PowerShell:
+
+```powershell
+$env:OPENAI_API_KEY = '<your key>'
+# optional
+$env:OPENAI_MODEL = 'gpt-4o-mini'
+$env:OPENAI_BASE_URL = 'https://api.openai.com'
+
+api-dev
+```
+
+Health check shows status:
+
+```
+GET /health -> { ok: true, llm: { provider: "openai", enabled: true } }
+```
+
 ## 🤖 Optional: Google Gemini integration
 
 The API can generate questions using Google Gemini when environment variables are set. On any provider error, it falls back to a built-in deterministic generator.
 
-Windows PowerShell:
+Windows PowerShell (switch provider):
 
 ```powershell
 $env:LLM_PROVIDER = 'gemini'

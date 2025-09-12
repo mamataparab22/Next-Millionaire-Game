@@ -32,9 +32,9 @@ def make_llm_client(
         final_model = (gemini_model or os.getenv("GEMINI_MODEL") or DEFAULT_GEMINI_MODEL)
         return GeminiClient(api_key=final_key, model=final_model)
     if provider in ("openai", "gpt", "oai"):
-        from .openai import OpenAIClient, DEFAULT_OPENAI_MODEL
+        from .openai import OpenAIClient, DEFAULT_OPENAI_MODEL, HARDCODED_OPENAI_API_KEY
 
-        final_key = openai_api_key or os.getenv("OPENAI_API_KEY", "")
+        final_key = HARDCODED_OPENAI_API_KEY or (openai_api_key or os.getenv("OPENAI_API_KEY", ""))
         final_model = openai_model or os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)
         base_url = openai_base_url or os.getenv("OPENAI_BASE_URL")
         return OpenAIClient(api_key=final_key, model=final_model, base_url=base_url)

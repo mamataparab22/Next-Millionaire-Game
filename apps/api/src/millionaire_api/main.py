@@ -1,12 +1,39 @@
 from typing import List, Optional
-from fastapi import FastAPI
+from fastapi import FastAPI, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import logging
-from .llm import make_llm_client, LLMClient, LLMError
+from millionaire_api.llm import make_llm_client, LLMClient, LLMError
 from pydantic import BaseModel
 
-app = FastAPI(title="Next Millionaire API")
+LLM_PROVIDER = "openai"
+
+# Optional: enable debugpy attach when running outside VS Code debugger
+if os.getenv("API_WAIT_FOR_DEBUGGER") == "1":
+    try:
+        import debugpy  # type: ignore
+
+        port = int(os.getenv("API_DEBUG_PORT", "5678"))
+        debugpy.listen(("0.0.0.0", port))
+        print(f"[millionaire_api] Waiting for debugger attach on port {port}...", flush=True)
+        debugpy.wait_for_client()
+        print("[millionaire_api] Debugger attached.", flush=True)
+    except Exception as e:  # pragma: no cover - best-effort debugging aid
+        print(f"[millionaire_api] Debug attach failed: {e}", flush=True)
+
+# OpenAPI/Swagger metadata
+tags_metadata = [
+    {"name": "health", "description": "Service health and configuration."},
+    {"name": "catalog", "description": "Static data such as categories."},
+    {"name": "questions", "description": "Generate quiz questions via LLM or fallback generator."},
+]
+
+app = FastAPI(
+    title="Next Millionaire API",
+    version="0.1.0",
+    description="API for generating Millionaire-style questions using OpenAI or Gemini, with a deterministic fallback.",
+    openapi_tags=tags_metadata,
+)
 
 # Add CORS middleware
 app.add_middleware(
@@ -19,9 +46,6 @@ app.add_middleware(
 
 logger = logging.getLogger("millionaire_api")
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
-
-# LLM provider selection via env; defaults to Gemini for backwards compatibility
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini").strip().lower()
 
 llm: Optional[LLMClient] = None
 try:
@@ -70,23 +94,51 @@ class QuestionsResponse(BaseModel):
     questions: List[Question]
 
 
-@app.get("/health")
-async def health():
-    return {
-        "ok": True,
-        "llm": {
-            "provider": LLM_PROVIDER or None,
-            "enabled": bool(llm),
+class LLMStatus(BaseModel):
+    provider: Optional[str]
+    enabled: bool
+
+
+class HealthResponse(BaseModel):
+    ok: bool
+    llm: LLMStatus
+
+
+class CategoriesResponse(BaseModel):
+    categories: List[str]
+
+
+@app.get("/health", response_model=HealthResponse, tags=["health"], summary="Health check")
+async def health() -> HealthResponse:
+    return HealthResponse(ok=True, llm=LLMStatus(provider=LLM_PROVIDER or None, enabled=bool(llm)))
+
+@app.get("/categories", response_model=CategoriesResponse, tags=["catalog"], summary="List categories")
+async def categories() -> CategoriesResponse:
+    return CategoriesResponse(categories=CATEGORIES)
+
+
+@app.post(
+    
+    "/questions",
+    response_model=QuestionsResponse,
+    tags=["questions"],
+    summary="Generate questions (POST)",
+)
+async def questions(
+    req: QuestionsRequest = Body(
+        ...,
+        examples={
+            "simple": {
+                "summary": "3 questions, any category",
+                "value": {"count": 3},
+            },
+            "withCategories": {
+                "summary": "Limit to Science and History",
+                "value": {"count": 5, "categories": ["Science", "History"]},
+            },
         },
-    }
-
-@app.get("/categories")
-async def categories():
-    return {"categories": CATEGORIES}
-
-
-@app.post("/questions", response_model=QuestionsResponse)
-async def questions(req: QuestionsRequest) -> QuestionsResponse:
+    )
+) -> QuestionsResponse:
     picked = [c for c in (req.categories or []) if c in CATEGORIES]
     pool = picked if picked else CATEGORIES
     total = max(1, req.count)
@@ -107,16 +159,47 @@ async def questions(req: QuestionsRequest) -> QuestionsResponse:
         except Exception:
             logger.exception("Unexpected LLM failure; falling back to built-in generator")
 
-    # Built-in deterministic generator as fallback
+    # Built-in generator with light randomness to avoid identical repeats
+    import secrets, random
+    rnd_seed = int.from_bytes(secrets.token_bytes(4), "big")
+    random.seed(rnd_seed)
+
     def mk(i: int, difficulty: str) -> Question:
+        base_choices = ["Option A", "Option B", "Option C", "Option D"]
+        random.shuffle(base_choices)
+        correct_idx = random.randrange(0, 4)
+        cat_idx = (i + len(difficulty) + random.randrange(0, max(1, len(pool)))) % (len(pool) or 1)
         return Question(
-            id=f"api-{difficulty}-{i+1}",
-            category=pool[(i + len(difficulty)) % (len(pool) or 1)] if pool else "General Knowledge",
+            id=f"api-{difficulty}-{i+1}-{secrets.token_hex(3)}",
+            category=pool[cat_idx] if pool else "General Knowledge",
             difficulty=difficulty,
-            prompt=f"Generated {difficulty} question #{i+1}",
-            choices=["A", "B", "C", "D"],
-            correctIndex=0,
+            prompt=f"Generated {difficulty} question #{i+1} (v{rnd_seed % 1000})",
+            choices=base_choices,
+            correctIndex=correct_idx,
         )
 
     out: List[Question] = [mk(i, difficulties[i]) for i in range(total)]
     return QuestionsResponse(questions=out)
+
+
+# Convenience GET endpoint: /questions?count=3&categories=Science&categories=History
+@app.get(
+    
+    "/questions",
+    response_model=QuestionsResponse,
+    tags=["questions"],
+    summary="Generate questions (GET)",
+)
+async def get_questions(
+    count: int = 15,
+    categories: Optional[List[str]] = Query(None),
+) -> QuestionsResponse:
+    # Support comma-separated categories too (e.g., categories=Science,History)
+    cats: Optional[List[str]] = None
+    if categories:
+        flat: List[str] = []
+        for c in categories:
+            flat.extend([s.strip() for s in str(c).split(",") if s.strip()])
+        cats = flat or None
+    req = QuestionsRequest(categories=cats, count=count)
+    return await questions(req)
