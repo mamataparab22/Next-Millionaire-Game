@@ -1,24 +1,14 @@
 from __future__ import annotations
 
-import os
 import json
-import asyncio
 import aiohttp
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List
 
-# Hardcoded Gemini configuration: update API key here to enable Gemini globally
+from . import LLMClient, LLMError
+
 DEFAULT_GEMINI_MODEL = "gemini-1.5-flash"
 # Replace the empty string with your real API key to hardcode it
 HARDCODED_GEMINI_API_KEY = "AIzaSyDB-dJpfxL_TumbuOavtn1-lNui339o2JQ"
-
-
-class LLMError(Exception):
-    pass
-
-
-class LLMClient:
-    async def generate(self, *, categories: List[str], difficulties: List[str]) -> List[Dict[str, Any]]:
-        raise NotImplementedError
 
 
 class GeminiClient(LLMClient):
@@ -30,7 +20,6 @@ class GeminiClient(LLMClient):
         self.endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent"
 
     def _build_prompt(self, categories: List[str], difficulties: List[str]) -> Dict[str, Any]:
-        # We request structured JSON for a list of questions matching our schema
         instructions = (
             "You are generating multiple-choice trivia questions for a 'Who Wants to Be a Millionaire' style game. "
             "Return strictly valid JSON, no markdown. Each question must have 4 choices and exactly one correct index. "
@@ -73,7 +62,6 @@ class GeminiClient(LLMClient):
                     text = await resp.text()
                     raise LLMError(f"Gemini error: {resp.status} {text}")
                 data = await resp.json()
-        # Parse response; expect JSON in candidates[0].content.parts[0].text
         try:
             candidates = data.get("candidates") or []
             first = candidates[0]
@@ -84,7 +72,6 @@ class GeminiClient(LLMClient):
         except Exception as e:
             raise LLMError(f"Failed to parse Gemini response: {e}")
 
-        # Coerce minimal validation and fallbacks
         out: List[Dict[str, Any]] = []
         for i, q in enumerate(qlist):
             try:
@@ -94,7 +81,6 @@ class GeminiClient(LLMClient):
                 prompt = str(q.get("prompt") or "Question")
                 choices = list(q.get("choices") or [])
                 if len(choices) != 4:
-                    # pad/trim to 4 choices
                     base = choices[:4] + ["Option A", "Option B", "Option C", "Option D"]
                     choices = base[:4]
                 cidx = int(q.get("correctIndex") or 0)
@@ -110,13 +96,11 @@ class GeminiClient(LLMClient):
                         "correctIndex": cidx,
                     }
                 )
-            except Exception as e:
-                # Skip malformed items
+            except Exception:
                 continue
 
         if not out:
             raise LLMError("No valid questions returned by Gemini")
-        # Ensure we match requested count (truncate or pad by repeating last)
         target = len(difficulties)
         if len(out) > target:
             out = out[:target]
@@ -127,15 +111,3 @@ class GeminiClient(LLMClient):
             dup["difficulty"] = difficulties[len(out)]
             out.append(dup)
         return out
-
-
-def make_llm_client(provider: str, *, gemini_api_key: Optional[str] = None, gemini_model: Optional[str] = None) -> Optional[LLMClient]:
-    provider = (provider or "").strip().lower()
-    if provider in ("", "none"):
-        return None
-    if provider == "gemini":
-        # Prefer hardcoded API key if provided; fall back to passed/env value
-        final_key = HARDCODED_GEMINI_API_KEY or (gemini_api_key or "")
-        final_model = gemini_model or DEFAULT_GEMINI_MODEL
-        return GeminiClient(api_key=final_key, model=final_model)
-    raise ValueError(f"Unknown LLM provider: {provider}")

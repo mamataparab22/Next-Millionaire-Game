@@ -41,3 +41,26 @@ Health check shows status:
 ```
 GET /health -> { ok: true, llm: { provider: "gemini", enabled: true } }
 ```
+
+## 🤖 Optional: OpenAI (or compatible) integration
+
+You can switch the provider to OpenAI. The API uses the Chat Completions endpoint and requests JSON output.
+
+Windows PowerShell:
+
+```powershell
+$env:LLM_PROVIDER = 'openai'
+$env:OPENAI_API_KEY = '<your key>'
+# optional (default: gpt-4o-mini)
+$env:OPENAI_MODEL = 'gpt-4o-mini'
+# optional: for OpenAI-compatible servers (e.g. Azure/OpenRouter/local server)
+$env:OPENAI_BASE_URL = 'https://api.openai.com'
+
+api-dev
+```
+
+Health check shows status:
+
+```
+GET /health -> { ok: true, llm: { provider: "openai", enabled: true } }
+```
