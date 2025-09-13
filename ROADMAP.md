@@ -32,9 +32,9 @@ Legend: ✅ Completed · 🟡 In Progress · ⬜ TODO
   - Backend: migrated to Python FastAPI with /health, /categories, /questions
   - Frontend API integration: Play fetches questions with loading banner and fallback notice when API unavailable; Home loads categories dynamically with its own loading/fallback banners
   - Dev experience: PowerShell script dev.ps1 to run API + Vite together (sets VITE_API_BASE)
-  - Google Gemini integration: Complete LLM client implementation with GeminiClient, error handling, graceful fallbacks, and end-to-end testing
+  - LLM integrations: OpenAI and Anthropic adapters with error handling, graceful fallbacks, and end-to-end testing
   - CORS support: Added CORS middleware for frontend-backend communication
-  - Environment configuration: LLM_PROVIDER, GEMINI_API_KEY, GEMINI_MODEL environment variables
+  - Environment configuration: LLM_PROVIDER, OPENAI_*, ANTHROPIC_* environment variables
 - In Progress
   - Expand unit tests for lifeline edge cases, checkpoints, endgame
 - TODO (near-term)
@@ -150,7 +150,7 @@ Goal: Production-ready look-and-feel with inclusive design.
 
 ## Appendix — LLM Provider Strategy (future; optional)
 
-Goal: Start with Google Gemini for speed-to-MVP while keeping a clean, swappable abstraction to migrate to an internal company LLM with minimal changes.
+Goal: Keep a clean, swappable abstraction to migrate to an internal company LLM with minimal changes.
 
 ### Contract (interface-first)
 Define a narrow, provider-agnostic interface used by the API layer:
@@ -163,17 +163,17 @@ Define a narrow, provider-agnostic interface used by the API layer:
 - Error model: { code: "RATE_LIMIT"|"INVALID_PROMPT"|"PROVIDER_ERROR", message, details? }
 
 ### Adapter pattern
-- Create `LLMClient` interface and two adapters:
-  - `GeminiClient` (MVP)
+- Create `LLMClient` interface and adapters
+  - `OpenAIClient` and `AnthropicClient` (current)
   - `InternalLLMClient` (stub initially)
-- Provider chosen at runtime via env: `LLM_PROVIDER=gemini|internal`.
+- Provider chosen at runtime via env: `LLM_PROVIDER=openai|anthropic|internal`.
 - Keep prompt building separate: `PromptBuilder` returns provider-agnostic strings/JSON schemas.
 
 ### Configuration & security
 - Server-side only: never expose keys to the browser.
 - Env vars:
-  - `LLM_PROVIDER=gemini`
-  - `GEMINI_API_KEY=...`
+  - `LLM_PROVIDER=openai|anthropic`
+  - `OPENAI_API_KEY=...` / `ANTHROPIC_API_KEY=...`
   - `INTERNAL_LLM_BASE_URL=...` (future)
   - `INTERNAL_LLM_API_KEY=...` (future)
 - Add zod/env-var schema validation with clear startup errors.
@@ -191,7 +191,7 @@ Define a narrow, provider-agnostic interface used by the API layer:
 - Add sampling for prompt/response pairs (PII-safe) to evaluate quality across providers.
 
 ### Migration steps
-1. Implement `LLMClient` interface + `GeminiClient` adapter.
+1. Implement `LLMClient` interface + provider adapters.
 2. Build `PromptBuilder` with templates for generation/validation and golden tests.
 3. Wire API routes (`/llm/generate`, `/llm/validate`) to `LLMClient` via DI/factory.
 4. Add feature flag/env switch `LLM_PROVIDER` and boot-time logs of active provider.
@@ -202,8 +202,8 @@ Define a narrow, provider-agnostic interface used by the API layer:
 9. Cutover: switch `LLM_PROVIDER=internal` in staging → prod; monitor SLOs.
 
 ### Rollback plan
-- Keep both adapters deployable; switching is a config change only.
-- If error budget is breached or validation fails spike, revert `LLM_PROVIDER` to `gemini`.
+- Keep adapters deployable; switching is a config change only.
+- If error budget is breached or validation fails spike, revert `LLM_PROVIDER` to your previous stable provider.
 
 ### Roadmap checkboxes (map to phases)
 - Phase 3 (Backend):
@@ -214,7 +214,7 @@ Define a narrow, provider-agnostic interface used by the API layer:
   - ✅ JSON schema validation for outputs
   - ✅ Basic error handling and graceful fallbacks
 - Phase 8 (Testing/CI):
-  - ✅ End-to-end integration tests for Gemini client
+  - ✅ End-to-end integration tests for provider clients
   - ⬜ Conformance tests run in CI for both adapters (stubbed for internal)
   - ⬜ Telemetry assertions (latency budgets) in smoke tests
 - Phase 9 (Release):

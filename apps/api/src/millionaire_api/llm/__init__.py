@@ -16,21 +16,15 @@ class LLMClient:
 def make_llm_client(
     provider: str,
     *,
-    gemini_api_key: Optional[str] = None,
-    gemini_model: Optional[str] = None,
     openai_api_key: Optional[str] = None,
     openai_model: Optional[str] = None,
     openai_base_url: Optional[str] = None,
+    anthropic_api_key: Optional[str] = None,
+    anthropic_model: Optional[str] = None,
 ) -> Optional[LLMClient]:
     provider = (provider or "").strip().lower()
     if provider in ("", "none"):
         return None
-    if provider == "gemini":
-        from .gemini import GeminiClient, HARDCODED_GEMINI_API_KEY, DEFAULT_GEMINI_MODEL
-
-        final_key = HARDCODED_GEMINI_API_KEY or (gemini_api_key or os.getenv("GEMINI_API_KEY", ""))
-        final_model = (gemini_model or os.getenv("GEMINI_MODEL") or DEFAULT_GEMINI_MODEL)
-        return GeminiClient(api_key=final_key, model=final_model)
     if provider in ("openai", "gpt", "oai"):
         from .openai import OpenAIClient, DEFAULT_OPENAI_MODEL, HARDCODED_OPENAI_API_KEY
 
@@ -38,4 +32,10 @@ def make_llm_client(
         final_model = openai_model or os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)
         base_url = openai_base_url or os.getenv("OPENAI_BASE_URL")
         return OpenAIClient(api_key=final_key, model=final_model, base_url=base_url)
+    if provider in ("anthropic", "claude"):
+        from .anthropic import AnthropicClient, DEFAULT_ANTHROPIC_MODEL, HARDCODED_ANTHROPIC_API_KEY
+
+        final_key = HARDCODED_ANTHROPIC_API_KEY or (anthropic_api_key or os.getenv("ANTHROPIC_API_KEY", ""))
+        final_model = anthropic_model or os.getenv("ANTHROPIC_MODEL", DEFAULT_ANTHROPIC_MODEL)
+        return AnthropicClient(api_key=final_key, model=final_model)
     raise ValueError(f"Unknown LLM provider: {provider}")

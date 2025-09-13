@@ -42,26 +42,7 @@ Health check shows status:
 GET /health -> { ok: true, llm: { provider: "openai", enabled: true } }
 ```
 
-## 🤖 Optional: Google Gemini integration
 
-The API can generate questions using Google Gemini when environment variables are set. On any provider error, it falls back to a built-in deterministic generator.
-
-Windows PowerShell (switch provider):
-
-```powershell
-$env:LLM_PROVIDER = 'gemini'
-$env:GEMINI_API_KEY = '<your key>'
-# optional (default: gemini-1.5-flash)
-$env:GEMINI_MODEL = 'gemini-1.5-flash'
-
-api-dev
-```
-
-Health check shows status:
-
-```
-GET /health -> { ok: true, llm: { provider: "gemini", enabled: true } }
-```
 
 ## 🤖 Optional: OpenAI (or compatible) integration
 
@@ -84,4 +65,25 @@ Health check shows status:
 
 ```
 GET /health -> { ok: true, llm: { provider: "openai", enabled: true } }
+```
+
+## 🤖 Optional: Anthropic (Claude) integration
+
+Switch to Anthropic's Claude models by setting the provider and your API key. The service requests JSON output and validates it before returning results. On any error, it falls back to the built-in generator.
+
+Windows PowerShell:
+
+```powershell
+$env:LLM_PROVIDER = 'anthropic'
+$env:ANTHROPIC_API_KEY = '<your key>'
+# optional (default: claude-3-5-sonnet-latest)
+$env:ANTHROPIC_MODEL = 'claude-3-5-sonnet-latest'
+
+api-dev
+```
+
+Health check shows status:
+
+```
+GET /health -> { ok: true, llm: { provider: "anthropic", enabled: true } }
 ```

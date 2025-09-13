@@ -6,7 +6,7 @@ import logging
 from millionaire_api.llm import make_llm_client, LLMClient, LLMError
 from pydantic import BaseModel
 
-LLM_PROVIDER = "openai"
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")
 
 # Optional: enable debugpy attach when running outside VS Code debugger
 if os.getenv("API_WAIT_FOR_DEBUGGER") == "1":
@@ -31,7 +31,7 @@ tags_metadata = [
 app = FastAPI(
     title="Next Millionaire API",
     version="0.1.0",
-    description="API for generating Millionaire-style questions using OpenAI or Gemini, with a deterministic fallback.",
+    description="API for generating Millionaire-style questions using OpenAI or Anthropic, with a deterministic fallback.",
     openapi_tags=tags_metadata,
 )
 
@@ -49,7 +49,7 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 
 llm: Optional[LLMClient] = None
 try:
-    # Provider-specific configuration is resolved inside the LLM factory
+    # Provider-specific configuration is resolved inside the LLM factory; env vars may override
     llm = make_llm_client(LLM_PROVIDER)
     if llm:
         logger.info("LLM provider initialized: %s", LLM_PROVIDER)

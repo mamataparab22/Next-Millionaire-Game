@@ -10,40 +10,39 @@ import asyncio
 from . import LLMClient, LLMError
 
 
-DEFAULT_OPENAI_MODEL = os.getenv("OPENAI_DEFAULT_MODEL", "gpt-4o-mini")
-# Optional hardcoded key hook (not recommended for production; keep empty by default)
-HARDCODED_OPENAI_API_KEY: Optional[str] = None
+DEFAULT_ANTHROPIC_MODEL = os.getenv("ANTHROPIC_DEFAULT_MODEL", "claude-3-5-sonnet-latest")
+HARDCODED_ANTHROPIC_API_KEY: Optional[str] = None
 
 
-class OpenAIClient(LLMClient):
-    def __init__(self, *, api_key: str, model: str = DEFAULT_OPENAI_MODEL, base_url: Optional[str] = None):
+class AnthropicClient(LLMClient):
+    def __init__(self, *, api_key: str, model: str = DEFAULT_ANTHROPIC_MODEL):
         self.api_key = (api_key or "").strip()
         self.model = model
-        # Support OpenAI-compatible providers (Azure, local, etc.)
-        self.base_url = (base_url or os.getenv("OPENAI_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
 
     async def generate(self, *, categories: List[str], difficulties: List[str]) -> List[Dict[str, Any]]:
         if not self.api_key:
-            raise LLMError("OPENAI_API_KEY not configured")
+            raise LLMError("ANTHROPIC_API_KEY not configured")
 
         prompt = _build_prompt(categories, difficulties)
 
-        url = f"{self.base_url}/chat/completions"
+        url = "https://api.anthropic.com/v1/messages"
         headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
+            "x-api-key": self.api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
             "User-Agent": "iliad/0.5 millionaire-api/0.1.0",
         }
+
         payload: Dict[str, Any] = {
             "model": self.model,
+            "max_tokens": 1200,
+            "temperature": 0.7,
+            "system": _SYSTEM_PROMPT,
+            # Request JSON-only output when supported
+            "response_format": {"type": "json_object"},
             "messages": [
-                {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
-            # Try JSON mode if supported; many compat endpoints simply ignore this
-            "response_format": {"type": "json_object"},
-            "temperature": 0.7,
-            "max_tokens": 1200,
         }
 
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=40)) as session:
@@ -51,19 +50,20 @@ class OpenAIClient(LLMClient):
                 async with session.post(url, headers=headers, json=payload) as resp:
                     if resp.status >= 400:
                         text = await resp.text()
-                        raise LLMError(f"OpenAI HTTP {resp.status}: {text[:500]}")
+                        raise LLMError(f"Anthropic HTTP {resp.status}: {text[:500]}")
                     data = await resp.json()
                     try:
-                        content = data["choices"][0]["message"]["content"]
-                    except Exception as e:  # pragma: no cover - best-effort parse
-                        raise LLMError(f"OpenAI response parse error: {e} :: {str(data)[:500]}")
-                    return content
+                        # messages response: content is a list of blocks with type 'text'
+                        blocks = data.get("content", [])
+                        text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
+                    except Exception as e:
+                        raise LLMError(f"Anthropic response parse error: {e} :: {str(data)[:500]}")
+                    return text
 
-            # minimal retries on transient errors
             attempts, delay = 0, 0.8
             while True:
                 try:
-                    raw = await _post_once()
+                    text = await _post_once()
                     break
                 except LLMError as e:
                     msg = str(e)
@@ -76,7 +76,7 @@ class OpenAIClient(LLMClient):
                         continue
                     raise
 
-        return _parse_questions(raw, provider_tag="openai", categories=categories, difficulties=difficulties)
+        return _parse_questions(text, provider_tag="anthropic", categories=categories, difficulties=difficulties)
 
 
 _SYSTEM_PROMPT = (
@@ -100,18 +100,15 @@ def _build_prompt(categories: List[str], difficulties: List[str]) -> str:
         "- Keep prompts short and clear; no explanations.\n\n"
         "Output JSON object with a single field 'questions' that is an array of objects with keys: "
         "id (string), category (string), difficulty (string), prompt (string), choices (string[4]), correctIndex (number).\n"
-        "Example: {\"questions\": [{\"id\": \"q1\", \"category\": \"Science\", \"difficulty\": \"easy\", \"prompt\": \"What is H2O?\", \"choices\": [\"Water\", \"Oxygen\", \"Hydrogen\", \"Helium\"], \"correctIndex\": 0}]}\n"
         "Return only JSON."
     )
 
 
 def _parse_questions(raw_text: str, *, provider_tag: str, categories: List[str], difficulties: List[str]) -> List[Dict[str, Any]]:
     try:
-        # Some models may wrap in code fences
         text = raw_text.strip()
         if text.startswith("```"):
             text = text.strip("`\n ")
-            # drop potential leading language identifier
             if "\n" in text:
                 text = text.split("\n", 1)[1]
         data = json.loads(text)
@@ -119,7 +116,7 @@ def _parse_questions(raw_text: str, *, provider_tag: str, categories: List[str],
         if not isinstance(items, list):
             raise ValueError("questions array missing")
     except Exception as e:
-        raise LLMError(f"Failed to parse OpenAI JSON: {e} :: {raw_text[:500]}")
+        raise LLMError(f"Failed to parse Anthropic JSON: {e} :: {raw_text[:500]}")
 
     out: List[Dict[str, Any]] = []
     for i, q in enumerate(items):
@@ -142,12 +139,10 @@ def _parse_questions(raw_text: str, *, provider_tag: str, categories: List[str],
                     "correctIndex": idx,
                 }
             )
-        except Exception as e:  # pragma: no cover - robust against partial bad items
-            # Skip bad item; continue with others
+        except Exception:
             continue
 
     if not out:
-        raise LLMError("OpenAI returned no valid questions after parsing")
-    # Trim or pad to requested size if needed
+        raise LLMError("Anthropic returned no valid questions after parsing")
     want = len(difficulties)
     return out[:want]
