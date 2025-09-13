@@ -36,7 +36,7 @@ def make_llm_client(
             api_key=settings.get("api_key", ""),
             model=str(settings.get("model") or "gpt-4o-mini"),
             base_url=settings.get("base_url"),
-            api_version=str(settings.get("api_version") or "2024-06-01"),
+            api_version=settings.get("api_version"),
         )
     if provider in ("anthropic", "claude"):
         from .anthropic import AnthropicClient, HARDCODED_ANTHROPIC_API_KEY

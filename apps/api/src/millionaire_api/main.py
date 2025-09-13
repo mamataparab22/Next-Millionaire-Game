@@ -281,7 +281,6 @@ async def explain(req: ExplainRequest) -> ExplainResponse:
                 {"role": "user", "content": user_msg},
             ],
             temperature=0.6,
-            max_tokens=160,
         )
         text = (resp.choices[0].message.content or "").strip()
         if not text:

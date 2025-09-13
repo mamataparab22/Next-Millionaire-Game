@@ -51,7 +51,6 @@ class OpenAIClient(LLMClient):
                 ],
                 response_format={"type": "json_object"},
                 temperature=0.7,
-                max_tokens=1200,
             )
             try:
                 return resp.choices[0].message.content or ""
