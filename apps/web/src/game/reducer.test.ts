@@ -32,9 +32,12 @@ describe('gameReducer basics', () => {
     let s = dispatch(initialState, { type: 'LOAD_QUESTIONS', questions: qs })
   s = dispatch(s, { type: 'SELECT_CHOICE', index: 1 })
   s = dispatch(s, { type: 'LOCK_IN' })
-    expect(s.level).toBe(2)
+  // Level increments on NEXT, not on LOCK_IN
+  expect(s.level).toBe(1)
     expect(s.winnings).toBeGreaterThan(0)
     expect(s.lastSafeLevel).toBe(0)
+  s = dispatch(s, { type: 'NEXT' })
+  expect(s.level).toBe(2)
   })
 
   it('TIME_UP ends game with safe winnings', () => {

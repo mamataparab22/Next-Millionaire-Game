@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import FastAPI, Query, Body
+from fastapi import FastAPI, Query, Body, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 from millionaire_api.llm import make_llm_client, LLMClient, LLMError
@@ -53,7 +53,7 @@ try:
     if llm:
         logger.info("LLM provider initialized: %s", LLM_PROVIDER)
     else:
-        logger.info("LLM provider not configured; using built-in generator")
+        logger.error("LLM provider not configured; API will return errors for question generation")
 except Exception as e:
     logger.exception("Failed to initialize LLM provider: %s", e)
     llm = None
@@ -147,38 +147,30 @@ async def questions(
         ("easy" if (i + 1) <= 5 else ("medium" if (i + 1) <= 10 else "hard")) for i in range(total)
     ]
 
-    # Try LLM if configured
+    # Require LLM to be configured; if not, return a structured error
+    if llm is None:
+        raise HTTPException(status_code=503, detail={
+            "code": "LLM_NOT_CONFIGURED",
+            "message": "LLM is not configured. Set LLM_PROVIDER, LLM_API_KEY, LLM_MODEL, and LLM_BASE_URL (and LLM_API_VERSION for Azure)."
+        })
+
+    # Try LLM when configured; on failure, return structured error without fallback
     if llm is not None:
         try:
             llm_questions = await llm.generate(categories=pool, difficulties=difficulties)
-            # Coerce into Pydantic models
             return QuestionsResponse(questions=[Question(**q) for q in llm_questions])
         except LLMError as e:
-            logger.warning("LLMError, falling back to built-in generator: %s", e)
-        except Exception:
-            logger.exception("Unexpected LLM failure; falling back to built-in generator")
-
-    # Built-in generator with light randomness to avoid identical repeats
-    import secrets, random
-    rnd_seed = int.from_bytes(secrets.token_bytes(4), "big")
-    random.seed(rnd_seed)
-
-    def mk(i: int, difficulty: str) -> Question:
-        base_choices = ["Option A", "Option B", "Option C", "Option D"]
-        random.shuffle(base_choices)
-        correct_idx = random.randrange(0, 4)
-        cat_idx = (i + len(difficulty) + random.randrange(0, max(1, len(pool)))) % (len(pool) or 1)
-        return Question(
-            id=f"api-{difficulty}-{i+1}-{secrets.token_hex(3)}",
-            category=pool[cat_idx] if pool else "General Knowledge",
-            difficulty=difficulty,
-            prompt=f"Generated {difficulty} question #{i+1} (v{rnd_seed % 1000})",
-            choices=base_choices,
-            correctIndex=correct_idx,
-        )
-
-    out: List[Question] = [mk(i, difficulties[i]) for i in range(total)]
-    return QuestionsResponse(questions=out)
+            logger.warning("LLMError during generation: %s", e)
+            raise HTTPException(status_code=502, detail={
+                "code": "LLM_ERROR",
+                "message": f"LLM failed to generate questions: {e}",
+            })
+        except Exception as e:
+            logger.exception("Unexpected LLM failure")
+            raise HTTPException(status_code=500, detail={
+                "code": "LLM_FAILURE",
+                "message": "Unexpected LLM failure.",
+            })
 
 
 # Convenience GET endpoint: /questions?count=3&categories=Science&categories=History

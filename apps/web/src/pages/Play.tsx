@@ -4,7 +4,6 @@ import { Lifelines } from '../components/Lifelines'
 import { Card } from '../components/Card'
 import { LoadingQuestions } from '../components/LoadingQuestions'
 import { initialState, reducer, getCurrentQuestion } from '../game/reducer'
-import { SAMPLE_QUESTIONS } from '../game/sample'
 import { Modal } from '../components/Modal'
 import { ConfettiBurst } from '../components/ConfettiBurst'
 import { saveResults, saveSession, loadSession, clearSession } from '../game/storage'
@@ -20,7 +19,7 @@ export function Play() {
   const [animatePoll, setAnimatePoll] = useState(false)
   const [pulseLevel, setPulseLevel] = useState<number | undefined>(undefined)
   const [loadingQs, setLoadingQs] = useState(false)
-  const [usedFallback, setUsedFallback] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [showResults, setShowResults] = useState(false)
   const lastTimeRef = useRef<number>(0)
 
@@ -29,17 +28,15 @@ export function Play() {
   if (snapshot?.state && Array.isArray(snapshot.state.questions) && snapshot.state.questions.length > 0) {
       dispatch({ type: 'HYDRATE', state: snapshot.state })
       setLoadingQs(false)
-      setUsedFallback(false)
+      setLoadError(null)
       return
     }
-    // Try API first; fallback to bundled samples
+  // Load questions from API using categories chosen on Home
     const base = import.meta.env.VITE_API_BASE as string | undefined
     const categoriesRaw = sessionStorage.getItem('nm.categories') || ''
     const categories = categoriesRaw.split(',').map((s) => s.trim()).filter(Boolean)
     if (!base) {
-      // Only load if not already present (defense against unexpected remounts)
-      if (state.questions.length === 0) dispatch({ type: 'LOAD_QUESTIONS', questions: SAMPLE_QUESTIONS })
-      setUsedFallback(true)
+      setLoadError('API base URL is not configured.')
       setLoadingQs(false)
       return
     }
@@ -52,17 +49,22 @@ export function Play() {
       signal: controller.signal,
     })
       .then(async (r) => {
-        if (!r.ok) throw new Error('bad response')
+        if (!r.ok) {
+          try {
+            const data = await r.json()
+            const code = data?.detail?.code
+            if (code === 'LLM_NOT_CONFIGURED') throw new Error('LLM is not configured on the server.')
+          } catch {}
+          throw new Error('Failed to load questions from the server.')
+        }
         const data = await r.json()
-  if (!Array.isArray(data?.questions) || data.questions.length === 0) throw new Error('no questions')
+        if (!Array.isArray(data?.questions) || data.questions.length === 0) throw new Error('No questions returned by the server.')
   if (state.questions.length === 0) dispatch({ type: 'LOAD_QUESTIONS', questions: data.questions })
-        setUsedFallback(false)
+        setLoadError(null)
       })
       .catch((err: any) => {
-        // Ignore AbortError (React 18 StrictMode double-invoke)
-  if (err?.name === 'AbortError') return
-  if (state.questions.length === 0) dispatch({ type: 'LOAD_QUESTIONS', questions: SAMPLE_QUESTIONS })
-        setUsedFallback(true)
+        if (err?.name === 'AbortError') return
+        setLoadError(err?.message || 'Failed to load questions.')
       })
       .finally(() => setLoadingQs(false))
     return () => controller.abort()
@@ -151,9 +153,22 @@ export function Play() {
             <LoadingQuestions />
           </div>
         )}
-        {usedFallback && !loadingQs && (
-          <div className="col-span-full rounded border border-amber-700 bg-amber-900/40 px-3 py-2 text-xs text-amber-200">
-            Using sample questions (API unavailable)
+        {loadError && state.questions.length === 0 && !loadingQs && (
+          <div className="col-span-full">
+            <Card>
+              <div className="space-y-3">
+                <h2 className="text-lg font-bold text-red-200">Unable to start game</h2>
+                <p className="text-sm text-slate-200">{loadError}</p>
+                <div className="flex gap-2">
+                  <button
+                    className="rounded nm-gradient-bg px-4 py-2 text-sm font-semibold text-slate-900"
+                    onClick={() => navigate('/')}
+                  >
+                    Back to Home
+                  </button>
+                </div>
+              </div>
+            </Card>
           </div>
         )}
 

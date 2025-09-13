@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { clearSession, saveSession } from '../game/storage'
 import { initialState } from '../game/reducer'
-import { SAMPLE_QUESTIONS } from '../game/sample'
 import { LoadingQuestions } from '../components/LoadingQuestions'
 
 const FALLBACK_CATEGORIES = [
@@ -31,6 +30,7 @@ export function Home() {
   const [loading, setLoading] = useState(false)
   const [usedFallback, setUsedFallback] = useState(false)
   const [starting, setStarting] = useState(false)
+  const [startError, setStartError] = useState<string | null>(null)
   const canPlay = useMemo(() => selected.length > 0, [selected])
 
   const toggle = (c: string) => {
@@ -108,6 +108,7 @@ export function Home() {
             onClick={async () => {
               if (starting || !canPlay) return
               setStarting(true)
+              setStartError(null)
               clearSession()
 
               const proceed = (qs: any[]) => {
@@ -126,20 +127,31 @@ export function Home() {
                 const categoriesRaw = sessionStorage.getItem('nm.categories') || ''
                 const categories = categoriesRaw.split(',').map((s) => s.trim()).filter(Boolean)
                 if (!base) {
-                  proceed(SAMPLE_QUESTIONS)
-                  return
+                  throw new Error('API_UNAVAILABLE')
                 }
                 const r = await fetch(`${base}/questions`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ categories, count: 15 }),
                 })
-                if (!r.ok) throw new Error('bad response')
+                if (!r.ok) {
+                  let code = 'UNKNOWN'
+                  try {
+                    const data = await r.json()
+                    code = data?.detail?.code || code
+                  } catch {}
+                  if (code === 'LLM_NOT_CONFIGURED') {
+                    throw new Error('LLM is not configured. Please set LLM_* variables in the API and try again.')
+                  }
+                  throw new Error('Failed to generate questions. Please try again.')
+                }
                 const data = await r.json()
-                const qs = Array.isArray(data?.questions) && data.questions.length > 0 ? data.questions : SAMPLE_QUESTIONS
+                const qs = Array.isArray(data?.questions) && data.questions.length > 0 ? data.questions : []
+                if (qs.length === 0) throw new Error('No questions returned by LLM. Please try again.')
                 proceed(qs)
-              } catch {
-                proceed(SAMPLE_QUESTIONS)
+              } catch (e: any) {
+                setStartError(e?.message || 'Failed to start game.')
+                setStarting(false)
               }
             }}
             className="inline-block rounded nm-gradient-bg px-6 py-3 font-semibold text-slate-900 hover:brightness-105 disabled:opacity-50"
@@ -151,17 +163,32 @@ export function Home() {
           </button>
         </div>
       </section>
-      {starting && (
+      {(starting || startError) && (
         <div className="absolute inset-0 z-20 grid place-items-center bg-black/70 backdrop-blur-sm">
-          <div className="flex flex-col items-center gap-4" role="status" aria-live="polite" aria-label="Starting">
-            <div className="relative">
-              <div className="h-12 w-12 rounded-full border-4 border-slate-700 border-t-amber-400 animate-spin" aria-hidden="true" />
-              <div className="pointer-events-none absolute -inset-2 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 blur opacity-20" aria-hidden="true" />
+          {!startError ? (
+            <div className="flex flex-col items-center gap-4" role="status" aria-live="polite" aria-label="Starting">
+              <div className="relative">
+                <div className="h-12 w-12 rounded-full border-4 border-slate-700 border-t-amber-400 animate-spin" aria-hidden="true" />
+                <div className="pointer-events-none absolute -inset-2 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 blur opacity-20" aria-hidden="true" />
+              </div>
+              <p className="text-slate-200 font-semibold">
+                <span className="nm-gradient-text">Starting…</span>
+              </p>
             </div>
-            <p className="text-slate-200 font-semibold">
-              <span className="nm-gradient-text">Starting…</span>
-            </p>
-          </div>
+          ) : (
+            <div className="w-full max-w-lg rounded-lg border-2 border-red-400/70 bg-slate-900/95 p-5 text-slate-200 shadow-xl">
+              <h3 className="text-lg font-bold text-red-300">Unable to start</h3>
+              <p className="mt-2 text-sm">{startError}</p>
+              <div className="mt-4 flex justify-end">
+                <button
+                  onClick={() => { setStartError(null); setStarting(false); }}
+                  className="rounded bg-slate-700 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-600"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </main>
