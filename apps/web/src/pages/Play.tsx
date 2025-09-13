@@ -17,7 +17,7 @@ export function Play() {
   const [state, dispatch] = useReducer(reducer, initialState)
   const { enable, tick, correct, wrong, lifeline } = useSfx()
   const narrator = useTts()
-  const [narrationOn, setNarrationOn] = useState(false)
+  const [narrationOn, setNarrationOn] = useState(true)
   const [showPoll, setShowPoll] = useState(false)
   const [animatePoll, setAnimatePoll] = useState(false)
   const [pulseLevel, setPulseLevel] = useState<number | undefined>(undefined)
@@ -125,19 +125,66 @@ export function Play() {
 
   const q = getCurrentQuestion(state)
   const choices = q?.choices ?? []
+
+  // Try to enable audio context when narration is ON (non-blocking)
+  useEffect(() => {
+    if (narrationOn) {
+      Promise.resolve(narrator.enable()).catch(() => {})
+    }
+  }, [narrationOn])
+
+  // Add one-time unlock on first user interaction to satisfy autoplay policies
+  useEffect(() => {
+    if (!narrationOn || narrator.enabled) return
+    const handler = () => { narrator.enable().catch(() => {}) }
+    window.addEventListener('pointerdown', handler, { once: true })
+    window.addEventListener('keydown', handler, { once: true })
+    return () => {
+      window.removeEventListener('pointerdown', handler)
+      window.removeEventListener('keydown', handler)
+    }
+  }, [narrationOn, narrator.enabled])
   // Narrate new question and options when moving to a new one
   useEffect(() => {
     if (!narrationOn) return
     const q = getCurrentQuestion(state)
     if (!q) return
     narrator.clear()
-    narrator.speak(`For ${q.difficulty} difficulty. ${q.prompt}`)
+    narrator.speakWithId(`q:${q.id}:preamble`, `For ${q.difficulty} difficulty. ${q.prompt}`)
     q.choices.forEach((c, i) => {
       const letter = String.fromCharCode(65 + i)
-      narrator.speak(`${letter}: ${c}`)
+      narrator.speakWithId(`q:${q.id}:choice:${i}`, `${letter}: ${c}`)
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.currentQuestionIndex])
+
+  // If narration just turned ON, narrate the current question immediately
+  useEffect(() => {
+    if (!narrationOn) return
+    const q = getCurrentQuestion(state)
+    if (!q) return
+    narrator.clear()
+    narrator.speakWithId(`q:${q.id}:preamble`, `For ${q.difficulty} difficulty. ${q.prompt}`)
+    q.choices.forEach((c, i) => {
+      const letter = String.fromCharCode(65 + i)
+      narrator.speakWithId(`q:${q.id}:choice:${i}`, `${letter}: ${c}`)
+    })
+    // Only run when toggled to ON
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [narrationOn])
+
+  // Prefetch next question’s narration to reduce latency
+  useEffect(() => {
+    if (!narrationOn) return
+    const nextIdx = state.currentQuestionIndex + 1
+    const nextQ = state.questions[nextIdx]
+    if (!nextQ) return
+    narrator.prefetch(`q:${nextQ.id}:preamble`, `For ${nextQ.difficulty} difficulty. ${nextQ.prompt}`)
+    nextQ.choices.forEach((c, i) => {
+      const letter = String.fromCharCode(65 + i)
+      narrator.prefetch(`q:${nextQ.id}:choice:${i}`, `${letter}: ${c}`)
+    })
+  }, [narrationOn, state.currentQuestionIndex, state.questions, narrator])
   const totalTime = timeForLevel(state.level)
   const timeFrac = totalTime > 0 ? state.remainingTime / totalTime : 0
   const lowTime = state.remainingTime <= 5
@@ -189,7 +236,18 @@ export function Play() {
           <div className="flex justify-start gap-2">
             <button
               className={"inline-flex items-center gap-2 rounded-md border-2 px-3 py-1.5 text-xs sm:text-sm font-semibold shadow " + (narrationOn ? 'border-emerald-400/80 bg-emerald-900/40 text-emerald-100' : 'border-amber-400/80 bg-slate-900/70 text-slate-100')}
-              onClick={async () => { if (!narrationOn) { await narrator.enable() } setNarrationOn(v => !v) }}
+              onClick={() => {
+                setNarrationOn(prev => {
+                  const next = !prev
+                  if (next) {
+                    // Try to enable audio context; do not block UI toggle
+                    Promise.resolve(narrator.enable()).catch(() => {})
+                  } else {
+                    narrator.clear()
+                  }
+                  return next
+                })
+              }}
               title="Toggle AI host narration"
               aria-label="Toggle narration"
             >
@@ -197,7 +255,7 @@ export function Play() {
                 <path d="M4 10a6 6 0 0 1 6-6h2v16h-2a6 6 0 0 1-6-6Z" stroke={narrationOn ? '#34d399' : '#fbbf24'} strokeWidth="2" />
                 <path d="M18 8a4 4 0 0 1 0 8" stroke={narrationOn ? '#6ee7b7' : '#fde68a'} strokeWidth="2" strokeLinecap="round"/>
               </svg>
-              <span className="hidden sm:inline">{narrationOn ? 'Narration On' : 'Narration Off'}</span>
+              <span>{narrationOn ? 'Narration On' : 'Narration Off'}</span>
             </button>
             <button
               className="inline-flex items-center gap-2 rounded-md border-2 border-amber-400/80 bg-slate-900/70 px-3 py-1.5 text-xs sm:text-sm font-semibold text-slate-100 shadow hover:bg-slate-800/80 disabled:opacity-60"
