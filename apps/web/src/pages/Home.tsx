@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { clearSession } from '../game/storage'
+import { clearSession, saveSession } from '../game/storage'
+import { initialState } from '../game/reducer'
+import { SAMPLE_QUESTIONS } from '../game/sample'
+import { LoadingQuestions } from '../components/LoadingQuestions'
 
 const FALLBACK_CATEGORIES = [
   'General Knowledge',
@@ -27,6 +30,7 @@ export function Home() {
   const [categories, setCategories] = useState<string[]>(FALLBACK_CATEGORIES)
   const [loading, setLoading] = useState(false)
   const [usedFallback, setUsedFallback] = useState(false)
+  const [starting, setStarting] = useState(false)
   const canPlay = useMemo(() => selected.length > 0, [selected])
 
   const toggle = (c: string) => {
@@ -66,6 +70,7 @@ export function Home() {
     <main
       className="relative min-h-screen p-6 grid place-items-center bg-center bg-cover"
       style={{ backgroundImage: "url('/millionaire-hero.jpg')" }}
+      aria-busy={starting || undefined}
     >
       {/* Dark overlay to improve text contrast over the background image */}
       <div aria-hidden className="pointer-events-none absolute inset-0 z-0 bg-black/60" />
@@ -100,16 +105,65 @@ export function Home() {
         </div>
   <div className="pt-2">
           <button
-            onClick={() => { clearSession(); navigate('/play') }}
+            onClick={async () => {
+              if (starting || !canPlay) return
+              setStarting(true)
+              clearSession()
+
+              const proceed = (qs: any[]) => {
+                const snapshotState = {
+                  ...initialState,
+                  questions: qs,
+                  remainingTime: initialState.remainingTime,
+                  seenQuestionIds: qs[0] ? [qs[0].id] : [],
+                }
+                saveSession(snapshotState)
+                navigate('/play')
+              }
+
+              try {
+                const base = import.meta.env.VITE_API_BASE as string | undefined
+                const categoriesRaw = sessionStorage.getItem('nm.categories') || ''
+                const categories = categoriesRaw.split(',').map((s) => s.trim()).filter(Boolean)
+                if (!base) {
+                  proceed(SAMPLE_QUESTIONS)
+                  return
+                }
+                const r = await fetch(`${base}/questions`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ categories, count: 15 }),
+                })
+                if (!r.ok) throw new Error('bad response')
+                const data = await r.json()
+                const qs = Array.isArray(data?.questions) && data.questions.length > 0 ? data.questions : SAMPLE_QUESTIONS
+                proceed(qs)
+              } catch {
+                proceed(SAMPLE_QUESTIONS)
+              }
+            }}
             className="inline-block rounded nm-gradient-bg px-6 py-3 font-semibold text-slate-900 hover:brightness-105 disabled:opacity-50"
-            disabled={!canPlay}
-            aria-disabled={!canPlay}
-            aria-label="Start"
+            disabled={!canPlay || starting}
+            aria-disabled={!canPlay || starting}
+            aria-label={starting ? 'Starting…' : 'Start'}
           >
-            Start
+            {starting ? 'Starting…' : 'Start'}
           </button>
         </div>
       </section>
+      {starting && (
+        <div className="absolute inset-0 z-20 grid place-items-center bg-black/70 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4" role="status" aria-live="polite" aria-label="Starting">
+            <div className="relative">
+              <div className="h-12 w-12 rounded-full border-4 border-slate-700 border-t-amber-400 animate-spin" aria-hidden="true" />
+              <div className="pointer-events-none absolute -inset-2 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 blur opacity-20" aria-hidden="true" />
+            </div>
+            <p className="text-slate-200 font-semibold">
+              <span className="nm-gradient-text">Starting…</span>
+            </p>
+          </div>
+        </div>
+      )}
     </main>
   )
 }

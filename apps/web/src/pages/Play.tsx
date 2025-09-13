@@ -145,8 +145,8 @@ export function Play() {
       {/* Dark overlay for readability */}
       <div aria-hidden className="pointer-events-none absolute inset-0 z-0 bg-black/60" />
   <div className="relative z-10 grid gap-4 md:grid-cols-[1fr_220px] pl-40">
-        {pulseLevel && <ConfettiBurst pieces={90} />}
-        {loadingQs && (
+  {pulseLevel && <ConfettiBurst pieces={90} />}
+  {loadingQs && state.questions.length === 0 && (
           <div className="col-span-full">
             <LoadingQuestions />
           </div>
