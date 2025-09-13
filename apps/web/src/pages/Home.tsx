@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { clearSession } from '../game/storage'
 
 const FALLBACK_CATEGORIES = [
   'General Knowledge',
@@ -62,9 +63,13 @@ export function Home() {
   }, [])
 
   return (
-    <main className="min-h-screen p-6 grid place-items-center">
-      <section className="w-full max-w-3xl space-y-6 text-center" aria-labelledby="home-title">
-  <h1 id="home-title" className="text-4xl font-extrabold nm-gradient-text">Next Millionaire</h1>
+    <main
+      className="relative min-h-screen p-6 grid place-items-center bg-center bg-cover"
+      style={{ backgroundImage: "url('/millionaire-hero.jpg')" }}
+    >
+      {/* Dark overlay to improve text contrast over the background image */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 z-0 bg-black/60" />
+      <section className="relative z-10 w-full max-w-3xl space-y-6 text-center" aria-labelledby="home-title">
         <p className="text-slate-300 max-w-prose mx-auto">
           Pick one or more categories and begin your journey to $1,000,000.
         </p>
@@ -93,15 +98,15 @@ export function Home() {
             )
           })}
         </div>
-        <div className="pt-2">
+  <div className="pt-2">
           <button
-            onClick={() => navigate('/play')}
+            onClick={() => { clearSession(); navigate('/play') }}
             className="inline-block rounded nm-gradient-bg px-6 py-3 font-semibold text-slate-900 hover:brightness-105 disabled:opacity-50"
             disabled={!canPlay}
             aria-disabled={!canPlay}
-            aria-label="Start playing"
+            aria-label="Start"
           >
-            Start Playing
+            Start
           </button>
         </div>
       </section>

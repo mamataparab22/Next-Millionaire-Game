@@ -15,10 +15,9 @@ export function Results() {
     <main className="min-h-screen p-6 grid place-items-center">
       <section className="space-y-4 text-center" aria-labelledby="results-title">
         <h1 id="results-title" className="text-3xl font-bold">Results</h1>
-        <p className="text-slate-300">You finished at level {level}. Your guaranteed checkpoint was level {lastSafeLevel}.</p>
   <p className="text-2xl font-extrabold"><span className="nm-gradient-text">Final Winnings: {formatted}</span></p>
         <button
-          onClick={() => { clearSession(); navigate('/play') }}
+          onClick={() => { clearSession(); navigate('/') }}
           className="inline-block rounded nm-gradient-bg px-6 py-3 font-semibold text-slate-900 hover:brightness-105"
           aria-label="Play again"
         >

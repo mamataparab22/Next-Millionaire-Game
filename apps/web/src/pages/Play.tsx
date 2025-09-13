@@ -21,8 +21,8 @@ export function Play() {
   const [usedFallback, setUsedFallback] = useState(false)
 
   useEffect(() => {
-    const snapshot = loadSession()
-    if (snapshot?.state && Array.isArray(snapshot.state.questions) && snapshot.state.questions.length > 0) {
+  const snapshot = loadSession()
+  if (snapshot?.state && Array.isArray(snapshot.state.questions) && snapshot.state.questions.length > 0) {
       dispatch({ type: 'HYDRATE', state: snapshot.state })
       setLoadingQs(false)
       setUsedFallback(false)
@@ -33,7 +33,8 @@ export function Play() {
     const categoriesRaw = sessionStorage.getItem('nm.categories') || ''
     const categories = categoriesRaw.split(',').map((s) => s.trim()).filter(Boolean)
     if (!base) {
-      dispatch({ type: 'LOAD_QUESTIONS', questions: SAMPLE_QUESTIONS })
+      // Only load if not already present (defense against unexpected remounts)
+      if (state.questions.length === 0) dispatch({ type: 'LOAD_QUESTIONS', questions: SAMPLE_QUESTIONS })
       setUsedFallback(true)
       setLoadingQs(false)
       return
@@ -49,14 +50,14 @@ export function Play() {
       .then(async (r) => {
         if (!r.ok) throw new Error('bad response')
         const data = await r.json()
-        if (!Array.isArray(data?.questions) || data.questions.length === 0) throw new Error('no questions')
-        dispatch({ type: 'LOAD_QUESTIONS', questions: data.questions })
+  if (!Array.isArray(data?.questions) || data.questions.length === 0) throw new Error('no questions')
+  if (state.questions.length === 0) dispatch({ type: 'LOAD_QUESTIONS', questions: data.questions })
         setUsedFallback(false)
       })
       .catch((err: any) => {
         // Ignore AbortError (React 18 StrictMode double-invoke)
-        if (err?.name === 'AbortError') return
-        dispatch({ type: 'LOAD_QUESTIONS', questions: SAMPLE_QUESTIONS })
+  if (err?.name === 'AbortError') return
+  if (state.questions.length === 0) dispatch({ type: 'LOAD_QUESTIONS', questions: SAMPLE_QUESTIONS })
         setUsedFallback(true)
       })
       .finally(() => setLoadingQs(false))
@@ -105,12 +106,23 @@ export function Play() {
   const totalTime = timeForLevel(state.level)
   const timeFrac = totalTime > 0 ? state.remainingTime / totalTime : 0
   const lowTime = state.remainingTime <= 5
+  // Show timer strictly for the first 10 questions (indexes 0..9)
+  const showTimer = state.currentQuestionIndex < 10
+  const circleRadius = 35
+  const circleCirc = 2 * Math.PI * circleRadius
+  const circleOffset = (1 - timeFrac) * circleCirc
   const formattedWinnings = useMemo(() => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(state.winnings), [state.winnings])
   const formattedSafe = useMemo(() => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(prizeForLevel(state.lastSafeLevel)), [state.lastSafeLevel])
 
   return (
-    <main className="min-h-screen" aria-describedby={state.infoMessage ? 'info-message' : undefined}>
-      <div className="grid gap-4 md:grid-cols-[1fr_280px]">
+    <main
+      className="relative min-h-screen bg-center bg-cover"
+      style={{ backgroundImage: "url('/millionaire-hero.jpg')" }}
+      aria-describedby={state.infoMessage ? 'info-message' : undefined}
+    >
+      {/* Dark overlay for readability */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 z-0 bg-black/60" />
+  <div className="relative z-10 grid gap-4 md:grid-cols-[1fr_220px] pl-40">
         {pulseLevel && <ConfettiBurst pieces={90} />}
         {loadingQs && (
           <div className="col-span-full">
@@ -125,65 +137,101 @@ export function Play() {
 
         {/* Game Stage */}
         <section className="flex flex-col gap-4 min-h-[70vh]">
+          {/* Top controls: Walk Away + New Game */}
+          <div className="flex justify-start gap-2">
+            <button
+              className="inline-flex items-center gap-2 rounded-md border-2 border-amber-400/80 bg-slate-900/70 px-3 py-1.5 text-xs sm:text-sm font-semibold text-slate-100 shadow hover:bg-slate-800/80 disabled:opacity-60"
+              onClick={() => dispatch({ type: 'WALK_AWAY' })}
+              disabled={state.answered || state.gameOver}
+              title="Leave now and keep your current winnings"
+              aria-label="Walk away"
+              aria-disabled={state.answered || state.gameOver}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path d="M3 3h7a1 1 0 0 1 1 1v3" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round"/>
+                <path d="M11 17v3a1 1 0 0 1-1 1H3V3" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round"/>
+                <path d="M14 8l4 4-4 4" stroke="#fde68a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M9 12h9" stroke="#fde68a" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+              <span className="hidden sm:inline">Walk Away</span>
+            </button>
+            <button
+              className="inline-flex items-center gap-2 rounded-md border-2 border-amber-400/80 bg-slate-900/70 px-3 py-1.5 text-xs sm:text-sm font-semibold text-slate-100 shadow hover:bg-slate-800/80"
+              onClick={() => { clearSession(); navigate('/'); }}
+              title="Start a new game"
+              aria-label="New Game"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path d="M12 5v2a5 5 0 1 1-4.546 2.914" stroke="#fde68a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M12 5l-3 3 3 3" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <span className="hidden sm:inline">New Game</span>
+            </button>
+          </div>
           {state.infoMessage && (
             <div id="info-message" role="status" aria-live="polite" className="rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200">
               {state.infoMessage}
             </div>
           )}
 
-          {/* Semi-circle countdown timer outside Card */}
-          <div className="flex justify-center pt-2">
-            <svg
-              width="160"
-              height="90"
-              viewBox="0 0 160 90"
-              role="img"
-              aria-label={`Time remaining ${state.remainingTime} of ${totalTime} seconds`}
-            >
-              <defs>
-                <linearGradient id="nm-timer-grad" x1="0%" y1="0%" x2="100%" y2="0%">
-                  <stop offset="0%" stopColor="#fcd34d" />
-                  <stop offset="100%" stopColor="#fb923c" />
-                </linearGradient>
-              </defs>
-              {/* Track */}
-              <path d="M 20 75 A 60 60 0 0 1 140 75" fill="none" stroke="#1f2937" strokeWidth="10" opacity="0.5" />
-              {/* Progress */}
-              <path
-                d="M 20 75 A 60 60 0 0 1 140 75"
-                fill="none"
-                stroke="url(#nm-timer-grad)"
-                strokeWidth="10"
-                strokeLinecap="round"
-                pathLength={100}
-                strokeDasharray="100"
-                strokeDashoffset={((1 - timeFrac) * 100).toString()}
-                style={{ transition: 'stroke-dashoffset 1s linear' }}
-              />
-              {/* Numeric label with pulse */}
-              <text
-                x="80"
-                y="68"
-                textAnchor="middle"
-                fontSize="24"
-                fontWeight="700"
-                fill={lowTime ? '#f87171' : '#cbd5e1'}
-                stroke="#0f172a"
-                strokeWidth="2"
-                style={{ paintOrder: 'stroke', animation: lowTime ? 'nm-timer-pulse 0.7s infinite' : undefined }}
-                aria-hidden="true"
+          {/* Centered circular countdown timer (only for first 10 questions) */}
+          {showTimer && (
+            <div className="flex justify-center mt-14 pt-1">
+              <svg
+                width="140"
+                height="140"
+                viewBox="0 0 80 80"
+                role="img"
+                aria-label={`Time remaining ${state.remainingTime} of ${totalTime} seconds`}
               >
-                {state.remainingTime}
-              </text>
-            </svg>
-            <style>{`
-              @keyframes nm-timer-pulse {
-                0% { transform: scale(1); }
-                50% { transform: scale(1.18); }
-                100% { transform: scale(1); }
-              }
-            `}</style>
-          </div>
+                <defs>
+                  <linearGradient id="nm-timer-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor="#fcd34d" />
+                    <stop offset="100%" stopColor="#fb923c" />
+                  </linearGradient>
+                </defs>
+                {/* Track */}
+                <circle cx="40" cy="40" r={circleRadius} fill="none" stroke="#1f2937" strokeWidth="8" opacity="0.5" />
+                {/* Progress */}
+                <g transform="rotate(-90 40 40)">
+                  <circle
+                    cx="40"
+                    cy="40"
+                    r={circleRadius}
+                    fill="none"
+                    stroke="url(#nm-timer-grad)"
+                    strokeWidth="8"
+                    strokeLinecap="round"
+                    strokeDasharray={circleCirc}
+                    strokeDashoffset={circleOffset}
+                    style={{ transition: 'stroke-dashoffset 1s linear' }}
+                  />
+                </g>
+                {/* Numeric label */}
+                <text
+                  x="40"
+                  y="49"
+                  textAnchor="middle"
+                  fontSize="28"
+                  fontWeight="800"
+                  fill={lowTime ? '#0b1220' : '#0b1220'}
+                  stroke={lowTime ? '#f87171' : '#e2e8f0'}
+                  strokeWidth="2"
+                  style={{ paintOrder: 'stroke', animation: lowTime ? 'nm-timer-pulse 0.7s infinite' : undefined }}
+                  aria-hidden="true"
+                >
+                  {state.remainingTime}
+                </text>
+              </svg>
+              <style>{`
+                @keyframes nm-timer-pulse {
+                  0% { transform: scale(1); }
+                  50% { transform: scale(1.14); }
+                  100% { transform: scale(1); }
+                }
+              `}</style>
+            </div>
+          )}
 
           {/* Question card anchored at bottom */}
           <div className="mt-auto">
@@ -197,8 +245,9 @@ export function Play() {
                     Safe Amount: <span className="font-semibold text-slate-200">{formattedSafe}</span>
                   </p>
                 </div>
-                {/* Millionaire-style question banner */}
-                <div className="rounded-xl border-2 border-amber-400/80 bg-gradient-to-b from-[#1E3A8A] to-[#0B276D] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_6px_20px_rgba(0,0,0,0.45)]">
+                {/* Millionaire-style question banner with circular timer on the right */
+                /* Walk Away button is vertically aligned on the left of this banner */}
+                <div className="relative rounded-xl border-2 border-amber-400/80 bg-gradient-to-b from-[#1E3A8A] to-[#0B276D] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_6px_20px_rgba(0,0,0,0.45)]">
                   <h1 className="text-center text-xl sm:text-2xl font-bold text-slate-50 min-h-[2lh]">{q?.prompt ?? '—'}</h1>
                 </div>
 
@@ -217,7 +266,10 @@ export function Play() {
                     const blueBtn =
                       'bg-gradient-to-b from-[#0F2A6F] to-[#0A1D52] border-amber-400/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_3px_14px_rgba(0,0,0,0.45)] hover:from-[#14378A] hover:to-[#0C276D]'
 
-                    const lockedStyles = 'ring-2 ring-indigo-400'
+                    const lockedStyles = 'ring-2 ring-amber-300'
+
+                    const selectedBtn =
+                      'bg-gradient-to-b from-amber-300 to-orange-500 text-slate-900 border-amber-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_4px_16px_rgba(0,0,0,0.45)]'
 
                     const resultBtn = isCorrect
                       ? 'bg-gradient-to-b from-emerald-600 to-emerald-800 border-emerald-300'
@@ -227,7 +279,7 @@ export function Play() {
 
                     const className = [
                       baseBtn,
-                      showResult ? resultBtn : blueBtn,
+                      showResult ? resultBtn : (isLocked ? selectedBtn : blueBtn),
                       isLocked && !showResult ? lockedStyles : ''
                     ].join(' ')
 
@@ -260,15 +312,7 @@ export function Play() {
                   >
                     Lock in
                   </button>
-                  <button
-                    className="rounded bg-slate-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 hover:bg-slate-500"
-                    onClick={() => dispatch({ type: 'WALK_AWAY' })}
-                    disabled={state.answered || state.gameOver}
-                    title="Leave now and keep your current winnings"
-                    aria-disabled={state.answered || state.gameOver}
-                  >
-                    Walk away
-                  </button>
+                  {/* Walk Away now lives in the top-left fixed button */}
                   <button
                     className="rounded bg-slate-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
                     onClick={() => dispatch({ type: 'NEXT' })}
@@ -277,15 +321,7 @@ export function Play() {
                   >
                     Next
                   </button>
-                  <button
-                    className="ml-auto text-xs underline text-slate-400 hover:text-slate-200"
-                    onClick={() => {
-                      clearSession()
-                      window.location.reload()
-                    }}
-                  >
-                    New Game
-                  </button>
+                  {/* New Game moved to the top controls */}
                 </div>
               </div>
             </Card>

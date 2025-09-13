@@ -28,8 +28,12 @@ export function reducer(state: GameState, action: GameAction): GameState {
       return { ...next, remainingTime: safeTime }
     }
     case 'LOAD_QUESTIONS': {
+      // If questions are already loaded, ignore further loads to avoid accidental resets (e.g., late API response or re-mounts)
+      if (state.questions && state.questions.length > 0) {
+        return state
+      }
       const qs = action.questions
-  return {
+      return {
         ...initialState,
         questions: qs,
         remainingTime: timeForLevel(1),
