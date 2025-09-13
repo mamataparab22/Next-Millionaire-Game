@@ -55,15 +55,20 @@ def resolve_llm_settings(
     g_api_key = api_key or env("LLM_API_KEY")
     g_model = model or env("LLM_MODEL")
     g_base = base_url or env("LLM_BASE_URL")
-    g_version = env("LLM_API_VERSION") or "2024-06-01"
+    # Only use API version when explicitly provided (needed for Azure OpenAI).
+    # For standard OpenAI, leave this unset so the SDK does not use Azure mode.
+    g_version = env("LLM_API_VERSION")
 
     if p in ("openai", "gpt", "oai"):
-        return {
+        out: Dict[str, Any] = {
             "api_key": (g_api_key or ""),
             "model": (g_model or "gpt-4o-mini"),
             "base_url": g_base,
-            "api_version": g_version,
         }
+        # Only include api_version when explicitly set (Azure OpenAI)
+        if g_version:
+            out["api_version"] = g_version
+        return out
 
     if p in ("anthropic", "claude"):
         return {
