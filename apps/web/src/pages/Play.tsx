@@ -197,7 +197,12 @@ export function Play() {
                     Safe Amount: <span className="font-semibold text-slate-200">{formattedSafe}</span>
                   </p>
                 </div>
-                <h1 className="text-2xl font-bold min-h-[2lh]">{q?.prompt ?? '—'}</h1>
+                {/* Millionaire-style question banner */}
+                <div className="rounded-xl border-2 border-amber-400/80 bg-gradient-to-b from-[#1E3A8A] to-[#0B276D] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_6px_20px_rgba(0,0,0,0.45)]">
+                  <h1 className="text-center text-xl sm:text-2xl font-bold text-slate-50 min-h-[2lh]">{q?.prompt ?? '—'}</h1>
+                </div>
+
+                {/* Millionaire-style answer options */}
                 <div className="grid gap-2 sm:grid-cols-2">
                   {choices.map((c, i) => {
                     const eliminated = state.eliminatedChoices.includes(i)
@@ -205,25 +210,43 @@ export function Play() {
                     const isLocked = state.lockedChoice === i
                     const showResult = state.answered
                     const isCorrect = q && i === q.correctIndex
-                    const base = 'rounded border border-slate-800 px-4 py-3 text-left transition-colors '
-                    const enabledStyles = 'bg-slate-900 hover:bg-slate-800'
+
+                    const baseBtn =
+                      'relative flex items-center gap-3 rounded-full border-2 px-4 py-2 sm:px-5 sm:py-3 text-left text-slate-100 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 select-none'
+
+                    const blueBtn =
+                      'bg-gradient-to-b from-[#0F2A6F] to-[#0A1D52] border-amber-400/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_3px_14px_rgba(0,0,0,0.45)] hover:from-[#14378A] hover:to-[#0C276D]'
+
                     const lockedStyles = 'ring-2 ring-indigo-400'
-                    const resultStyles = isCorrect
-                      ? 'bg-green-500/70 border-green-400'
+
+                    const resultBtn = isCorrect
+                      ? 'bg-gradient-to-b from-emerald-600 to-emerald-800 border-emerald-300'
                       : isLocked
-                      ? 'bg-red-800/60 border-red-700'
-                      : 'bg-slate-900'
+                      ? 'bg-gradient-to-b from-[#7f1d1d] to-[#450a0a] border-red-700'
+                      : 'bg-gradient-to-b from-[#0F2A6F] to-[#0A1D52] border-amber-400/70 opacity-80'
+
+                    const className = [
+                      baseBtn,
+                      showResult ? resultBtn : blueBtn,
+                      isLocked && !showResult ? lockedStyles : ''
+                    ].join(' ')
+
+                    const letter = String.fromCharCode(65 + i)
                     return (
                       <button
                         key={i}
                         disabled={showResult || state.remainingTime === 0}
                         onClick={() => dispatch({ type: 'SELECT_CHOICE', index: i })}
-                        className={base + (showResult ? resultStyles : enabledStyles) + (isLocked ? ' ' + lockedStyles : '')}
+                        className={className}
                         aria-pressed={isLocked}
                         aria-disabled={showResult || state.remainingTime === 0}
-                        aria-label={`Answer ${String.fromCharCode(65 + i)}: ${c}`}
+                        aria-label={`Answer ${letter}: ${c}`}
                       >
-                        {String.fromCharCode(65 + i)}) {c}
+                        <span className="flex items-center gap-2 shrink-0">
+                          <span className="h-2 w-2 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]" aria-hidden="true" />
+                          <span className="font-extrabold text-amber-200">{letter}:</span>
+                        </span>
+                        <span className="font-semibold">{c}</span>
                       </button>
                     )
                   })}
