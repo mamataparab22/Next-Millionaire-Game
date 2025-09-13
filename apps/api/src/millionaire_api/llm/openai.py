@@ -1,37 +1,43 @@
 from __future__ import annotations
 
 import json
-import os
 from typing import Any, Dict, List, Optional
 
 import asyncio
-from openai import AzureOpenAI
+from openai import OpenAI, AzureOpenAI
 
 from . import LLMClient, LLMError
 
-
-DEFAULT_OPENAI_MODEL = os.getenv("OPENAI_DEFAULT_MODEL", "gpt-4o-mini")
+DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
 # Optional hardcoded key hook (not recommended for production; keep empty by default)
 HARDCODED_OPENAI_API_KEY: Optional[str] = None
 
 
 class OpenAIClient(LLMClient):
-    def __init__(self, *, api_key: str, model: str = DEFAULT_OPENAI_MODEL, base_url: Optional[str] = None):
-        # For Azure OpenAI, prefer AZURE_* env vars; api_key param used as fallback
-        endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or (base_url or os.getenv("OPENAI_BASE_URL"))
-        api_key_final = os.getenv("AZURE_OPENAI_API_KEY") or (api_key or "")
-        api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-06-01")
+    def __init__(self, *, api_key: str, model: str = DEFAULT_OPENAI_MODEL, base_url: Optional[str] = None, api_version: Optional[str] = None):
+        # Expect generic LLM_* variables to be resolved by the factory and passed in
+        endpoint = (base_url or "").strip()
+        api_key_final = (api_key or "").strip()
 
         if not endpoint or not api_key_final:
-            raise ValueError("Azure OpenAI not configured: set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY")
+            raise ValueError("OpenAI not configured: set LLM_BASE_URL and LLM_API_KEY")
 
-        self.client = AzureOpenAI(
-            api_key=api_key_final,
-            api_version=api_version,
-            azure_endpoint=endpoint,
-        )
-        # For Azure, 'model' is the deployment name
-        self.model = model
+        # If api_version is provided, assume Azure OpenAI
+        if api_version:
+            self.client = AzureOpenAI(
+                api_key=api_key_final,
+                api_version=api_version,
+                azure_endpoint=endpoint,
+            )
+            # For Azure, 'model' is the deployment name
+            self.model = model
+        else:
+            # Standard OpenAI-compatible
+            self.client = OpenAI(
+                api_key=api_key_final,
+                base_url=endpoint,
+            )
+            self.model = model
 
     async def generate(self, *, categories: List[str], difficulties: List[str]) -> List[Dict[str, Any]]:
         prompt = _build_prompt(categories, difficulties)

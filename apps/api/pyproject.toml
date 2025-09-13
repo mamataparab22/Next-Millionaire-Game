@@ -12,6 +12,7 @@ dependencies = [
   "pydantic>=2.8.0",
   "openai>=1.40.0",        # AzureOpenAI client
   "anthropic>=0.36.0",     # Anthropic SDK
+  "python-dotenv>=1.0.1",  # Load .env files
 ]
 
 [project.scripts]

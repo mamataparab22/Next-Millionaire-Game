@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import os
 from typing import Any, Dict, List, Optional
+from millionaire_api.config import env, resolve_llm_settings
 
 
 class LLMError(Exception):
@@ -24,16 +24,27 @@ def make_llm_client(
     if provider in ("", "none"):
         return None
     if provider in ("openai", "gpt", "oai"):
-        from .openai import OpenAIClient, DEFAULT_OPENAI_MODEL, HARDCODED_OPENAI_API_KEY
+        from .openai import OpenAIClient, HARDCODED_OPENAI_API_KEY
 
-        final_key = HARDCODED_OPENAI_API_KEY or (llm_api_key or os.getenv("OPENAI_API_KEY", ""))
-        final_model = llm_model or os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)
-        base_url = llm_base_url or os.getenv("OPENAI_BASE_URL")
-        return OpenAIClient(api_key=final_key, model=final_model, base_url=base_url)
+        settings = resolve_llm_settings(
+            provider,
+            api_key=HARDCODED_OPENAI_API_KEY or llm_api_key,
+            model=llm_model,
+            base_url=llm_base_url,
+        )
+        return OpenAIClient(
+            api_key=settings.get("api_key", ""),
+            model=str(settings.get("model") or "gpt-4o-mini"),
+            base_url=settings.get("base_url"),
+            api_version=str(settings.get("api_version") or "2024-06-01"),
+        )
     if provider in ("anthropic", "claude"):
-        from .anthropic import AnthropicClient, DEFAULT_ANTHROPIC_MODEL, HARDCODED_ANTHROPIC_API_KEY
+        from .anthropic import AnthropicClient, HARDCODED_ANTHROPIC_API_KEY
 
-        final_key = HARDCODED_ANTHROPIC_API_KEY or (llm_api_key or os.getenv("ANTHROPIC_API_KEY", ""))
-        final_model = llm_model or os.getenv("ANTHROPIC_MODEL", DEFAULT_ANTHROPIC_MODEL)
-        return AnthropicClient(api_key=final_key, model=final_model)
+        settings = resolve_llm_settings(
+            provider,
+            api_key=HARDCODED_ANTHROPIC_API_KEY or llm_api_key,
+            model=llm_model,
+        )
+        return AnthropicClient(api_key=settings.get("api_key", ""), model=str(settings.get("model") or "claude-3-5-sonnet-latest"))
     raise ValueError(f"Unknown LLM provider: {provider}")

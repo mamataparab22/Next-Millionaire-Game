@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 from typing import Any, Dict, List, Optional
 
 import asyncio
@@ -9,8 +8,7 @@ import anthropic
 
 from . import LLMClient, LLMError
 
-
-DEFAULT_ANTHROPIC_MODEL = os.getenv("ANTHROPIC_DEFAULT_MODEL", "claude-3-5-sonnet-latest")
+DEFAULT_ANTHROPIC_MODEL = "claude-3-5-sonnet-latest"
 HARDCODED_ANTHROPIC_API_KEY: Optional[str] = None
 
 

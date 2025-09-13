@@ -1,19 +1,18 @@
 from typing import List, Optional
 from fastapi import FastAPI, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
-import os
 import logging
 from millionaire_api.llm import make_llm_client, LLMClient, LLMError
 from pydantic import BaseModel
+from millionaire_api.config import env  # loads .env on import
 
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")
+LLM_PROVIDER = env("LLM_PROVIDER", "openai")
 
 # Optional: enable debugpy attach when running outside VS Code debugger
-if os.getenv("API_WAIT_FOR_DEBUGGER") == "1":
+if env("API_WAIT_FOR_DEBUGGER") == "1":
     try:
         import debugpy  # type: ignore
-
-        port = int(os.getenv("API_DEBUG_PORT", "5678"))
+        port = int(env("API_DEBUG_PORT", "5678") or "5678")
         debugpy.listen(("0.0.0.0", port))
         print(f"[millionaire_api] Waiting for debugger attach on port {port}...", flush=True)
         debugpy.wait_for_client()
@@ -45,7 +44,7 @@ app.add_middleware(
 )
 
 logger = logging.getLogger("millionaire_api")
-logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+logging.basicConfig(level=env("LOG_LEVEL", "INFO"))
 
 llm: Optional[LLMClient] = None
 try:
