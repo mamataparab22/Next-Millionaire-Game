@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Iterator
 from fastapi import FastAPI, Query, Body, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 import logging
@@ -6,11 +6,13 @@ from millionaire_api.llm import make_llm_client, LLMClient, LLMError
 from pydantic import BaseModel
 from millionaire_api.config import env, resolve_llm_settings  # loads .env on import
 from openai import OpenAI, AzureOpenAI
+from fastapi.responses import StreamingResponse
+import requests
 import json as _json
-from urllib import request as _urlreq
-from urllib import error as _urlerr
+import base64 as _b64
 
 LLM_PROVIDER = env("LLM_PROVIDER", "openai")
+TTS_MODEL_DEFAULT = env("TTS_MODEL", "gpt-4o-mini-tts")
 
 # Optional: enable debugpy attach when running outside VS Code debugger
 if env("API_WAIT_FOR_DEBUGGER") == "1":
@@ -29,8 +31,8 @@ tags_metadata = [
     {"name": "health", "description": "Service health and configuration."},
     {"name": "catalog", "description": "Static data such as categories."},
     {"name": "questions", "description": "Generate quiz questions via LLM or fallback generator."},
-    {"name": "audio", "description": "Text-to-speech for host narration."},
     {"name": "insights", "description": "Short explanations for answers."},
+    {"name": "audio", "description": "Text-to-speech generation."},
 ]
 
 app = FastAPI(
@@ -207,15 +209,6 @@ async def get_questions(
     return await questions(req)
 
 
-# ---------- TTS (Text-to-Speech) ----------
-
-class TtsRequest(BaseModel):
-    text: str
-    voice: Optional[str] = None  # e.g., "alloy", "verse", "aria"
-    format: Optional[str] = None  # e.g., "mp3", "wav", "aac"
-    model: Optional[str] = None   # override default model if desired
-
-
 def _make_openai_client_for_general() -> tuple[object, str, bool]:
     """Create an OpenAI or AzureOpenAI client for general chat/completions.
     Returns (client, model, is_azure). Uses LLM_* envs.
@@ -236,96 +229,6 @@ def _make_openai_client_for_general() -> tuple[object, str, bool]:
         return client, model, True
     client = OpenAI(api_key=api_key, base_url=base_url)
     return client, model, False
-
-
-def _make_openai_client_for_tts() -> tuple[object, bool]:
-    """Create an OpenAI client for TTS using TTS_* overrides if provided.
-    Returns (client, is_azure).
-    """
-    # Use the same key as LLM; allow base URL override
-    tts_api_key = env("LLM_API_KEY") or ""
-    tts_base_url = env("TTS_BASE_URL") or env("LLM_BASE_URL")
-    if not tts_api_key:
-        raise HTTPException(status_code=503, detail={
-            "code": "TTS_NOT_CONFIGURED",
-            "message": "TTS is not configured. Set LLM_API_KEY along with TTS_BASE_URL or LLM_BASE_URL.",
-        })
-    # If the generic env suggests Azure (api version set), we still block TTS Azure path
-    if env("LLM_API_VERSION"):
-        return AzureOpenAI(api_key=tts_api_key, api_version=str(env("LLM_API_VERSION")), azure_endpoint=tts_base_url), True
-    return OpenAI(api_key=tts_api_key, base_url=tts_base_url), False
-
-
-@app.post("/tts", tags=["audio"], summary="Synthesize speech from text", response_class=Response)
-async def tts(req: TtsRequest) -> Response:
-    """Return audio bytes (mp3 by default) synthesized from provided text.
-    Implements the "Example Request (Basic)" using LLM_BASE_URL as BASE_URL.
-    """
-    if not req.text or not req.text.strip():
-        raise HTTPException(status_code=400, detail={"code": "BAD_REQUEST", "message": "text is required"})
-
-    # Guard: Azure-style envs are not supported for TTS in this route
-    if env("LLM_API_VERSION"):
-        raise HTTPException(status_code=501, detail={
-            "code": "TTS_NOT_SUPPORTED",
-            "message": "Azure-style API version detected; this TTS route supports only standard BASE_URL.",
-        })
-
-    api_key = env("LLM_API_KEY") or ""
-    base_url = (env("LLM_BASE_URL") or "").rstrip("/")
-    if not api_key or not base_url:
-        raise HTTPException(status_code=503, detail={
-            "code": "TTS_NOT_CONFIGURED",
-            "message": "Set LLM_BASE_URL and LLM_API_KEY to enable TTS.",
-        })
-
-    # Defaults
-    model = (req.model or env("TTS_MODEL") or "gpt-4o-mini-tts").strip()
-    voice = (req.voice or env("TTS_VOICE") or "alloy").strip()
-    out_format = (req.format or env("TTS_FORMAT") or "mp3").strip().lower()
-    if out_format not in ("mp3", "wav", "flac", "ogg", "aac"):
-        raise HTTPException(status_code=400, detail={"code": "UNSUPPORTED_FORMAT", "message": f"Unsupported audio format: {out_format}"})
-
-    url = f"{base_url}/v1/audio/speech"
-    payload = {
-        "model": model,
-        "voice": voice,
-        "input": req.text,
-        "format": out_format,
-    }
-    data_bytes = _json.dumps(payload).encode("utf-8")
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "Accept": "*/*",
-    }
-
-    try:
-        req_obj = _urlreq.Request(url, data=data_bytes, headers=headers, method="POST")
-        with _urlreq.urlopen(req_obj, timeout=60) as resp:
-            content_type = resp.headers.get("Content-Type", "application/octet-stream")
-            body = resp.read()
-    except _urlerr.HTTPError as e:
-        try:
-            err_body = e.read().decode("utf-8", errors="ignore")
-        except Exception:
-            err_body = str(e)
-        logger.warning("TTS HTTP error %s: %s", e.code, err_body[:500])
-        raise HTTPException(status_code=502, detail={"code": "TTS_ERROR", "message": err_body[:500]})
-    except Exception as e:
-        logger.exception("TTS request failed")
-        raise HTTPException(status_code=502, detail={"code": "TTS_ERROR", "message": str(e)})
-
-    # Normalize media type by requested format if server returned generic content-type
-    media_map = {
-        "mp3": "audio/mpeg",
-        "wav": "audio/wav",
-        "flac": "audio/flac",
-        "ogg": "audio/ogg",
-        "aac": "audio/aac",
-    }
-    media_type = media_map.get(out_format, content_type or "application/octet-stream")
-    return Response(content=body, media_type=media_type)
 
 
 # ---------- Explanations ----------
@@ -387,3 +290,86 @@ async def explain(req: ExplainRequest) -> ExplainResponse:
     except Exception as e:
         logger.exception("Explanation generation failed")
         raise HTTPException(status_code=502, detail={"code": "LLM_ERROR", "message": str(e)})
+
+
+# ---------- Text-to-Speech (TTS) ----------
+
+class TtsRequest(BaseModel):
+    input: str
+    voice: Optional[str] = "nova"
+    speed: Optional[float] = None
+    stream: Optional[bool] = False
+    model: Optional[str] = None
+
+
+def _tts_upstream_settings() -> tuple[str, str]:
+    base_url = env("LLM_BASE_URL") or ""
+    api_key = env("LLM_API_KEY") or ""
+    if not base_url or not api_key:
+        raise HTTPException(status_code=503, detail={
+            "code": "TTS_NOT_CONFIGURED",
+            "message": "Set LLM_BASE_URL and LLM_API_KEY (and TTS_MODEL).",
+        })
+    return base_url.rstrip("/"), api_key
+
+
+def _tts_stream_generator(url: str, payload: dict, headers: dict) -> Iterator[bytes]:
+    with requests.post(url=url, json=payload, headers=headers, stream=True, timeout=60) as resp:
+        try:
+            resp.raise_for_status()
+        except Exception as e:
+            # Yield nothing; FastAPI will convert to 500 if we raise inside generator
+            raise HTTPException(status_code=502, detail={"code": "TTS_UPSTREAM_ERROR", "message": str(e)})
+        for line in resp.iter_lines():
+            if not line:
+                continue
+            try:
+                data = _json.loads(line.decode("utf-8"))
+            except Exception:
+                continue
+            t = data.get("type")
+            if t == "speech.audio.delta":
+                chunk = data.get("audio")
+                if not chunk:
+                    continue
+                try:
+                    buf = _b64.b64decode(chunk)
+                except Exception:
+                    # If upstream changes format, skip invalid frames
+                    continue
+                if buf:
+                    yield buf
+            elif t == "speech.audio.done":
+                break
+
+
+@app.post("/tts", tags=["audio"], summary="Synthesize speech (mp3)")
+async def tts(req: TtsRequest):
+    if not req.input or not req.input.strip():
+        raise HTTPException(status_code=400, detail={"code": "BAD_REQUEST", "message": "input is required"})
+
+    base_url, api_key = _tts_upstream_settings()
+    model = (req.model or TTS_MODEL_DEFAULT or "gpt-4o-mini-tts").strip()
+    url = f"{base_url}/api/v1/speak/{model}"
+    payload: dict = {"input": req.input}
+    if req.voice:
+        payload["voice"] = req.voice
+    if req.speed is not None:
+        payload["speed"] = req.speed
+
+    headers = {"x-api-key": api_key}
+
+    # Streaming path
+    if req.stream:
+        gen = _tts_stream_generator(url, {**payload, "stream": True}, headers)
+        return StreamingResponse(gen, media_type="audio/mpeg")
+
+    # Non-streaming path: return mp3 bytes
+    try:
+        r = requests.post(url=url, json=payload, headers=headers, timeout=60)
+        r.raise_for_status()
+    except requests.RequestException as e:
+        raise HTTPException(status_code=502, detail={"code": "TTS_UPSTREAM_ERROR", "message": str(e)})
+
+    content_type = r.headers.get("Content-Type", "audio/mpeg")
+    return Response(content=r.content, media_type=content_type or "audio/mpeg")

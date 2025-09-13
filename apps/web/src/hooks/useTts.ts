@@ -1,163 +1,176 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef } from 'react'
 
-export type TtsOptions = {
-  voice?: string
-  format?: 'mp3' | 'wav' | 'flac' | 'ogg' | 'aac'
-  model?: string
+type TtsOptions = {
+	voice?: string
+	speed?: number
+	stream?: boolean
+	model?: string
 }
 
-export type Utterance = {
-  id?: string
-  text: string
-  opts?: TtsOptions
-}
+export function useTts(apiBase: string) {
+	const audioRef = useRef<HTMLAudioElement | null>(null)
+	const abortRef = useRef<AbortController | null>(null)
+	const msRef = useRef<MediaSource | null>(null)
+	const sbRef = useRef<SourceBuffer | null>(null)
+	const queueRef = useRef<Uint8Array[]>([])
+	const appendingRef = useRef<boolean>(false)
 
-export function useTts() {
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-  const queueRef = useRef<Utterance[]>([])
-  const playingRef = useRef(false)
-  const [enabled, setEnabled] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const cacheRef = useRef<Map<string, string>>(new Map())
-  const orderRef = useRef<string[]>([])
-  const MAX_CACHE = 24
+	const ensureAudio = useCallback(() => {
+		if (!audioRef.current) {
+			audioRef.current = new Audio()
+		}
+		return audioRef.current
+	}, [])
 
-  // Ensure a single audio element
-  useEffect(() => {
-    if (!audioRef.current) {
-      audioRef.current = new Audio()
-    }
-    const el = audioRef.current
-    const onEnded = () => {
-      playingRef.current = false
-      playNext()
-    }
-    el.addEventListener('ended', onEnded)
-    return () => {
-      el.removeEventListener('ended', onEnded)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+	const teardownMse = useCallback(() => {
+		try {
+			const a = audioRef.current
+			const ms = msRef.current
+			if (a) {
+				a.pause()
+				a.removeAttribute('src')
+				a.load()
+			}
+			if (ms && ms.readyState === 'open') {
+				try { ms.endOfStream() } catch {}
+			}
+		} catch {}
+		sbRef.current = null
+		msRef.current = null
+		queueRef.current = []
+		appendingRef.current = false
+	}, [])
 
-  const playNext = useCallback(async () => {
-    if (!enabled) return
-    if (playingRef.current) return
-    const next = queueRef.current.shift()
-    if (!next) {
-      setBusy(false)
-      return
-    }
-    try {
-      // Use cached audio if available by id
-      let url: string | undefined
-      let usedPrefetch = false
-      if (next.id && cacheRef.current.has(next.id)) {
-        url = cacheRef.current.get(next.id)!
-        usedPrefetch = true
-        // Remove from cache order; we'll revoke after play
-        orderRef.current = orderRef.current.filter((k) => k !== next.id)
-        cacheRef.current.delete(next.id)
-      }
-      if (!url) {
-        const base = import.meta.env.VITE_API_BASE as string | undefined
-        if (!base) throw new Error('VITE_API_BASE missing')
-        const body = JSON.stringify({ text: next.text, ...(next.opts || {}) })
-        const res = await fetch(`${base}/tts`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body,
-        })
-        if (!res.ok) throw new Error(`TTS failed: ${res.status}`)
-        const blob = await res.blob()
-        url = URL.createObjectURL(blob)
-      }
+	const speak = useCallback(
+		async (text: string, opts?: TtsOptions) => {
+			if (!text?.trim()) return
+			// Stop any in-flight stream
+			abortRef.current?.abort()
+			teardownMse()
+			const a = ensureAudio()
+			// Non-streaming fetch of mp3
+			const res = await fetch(`${apiBase}/tts`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ input: text, voice: opts?.voice ?? 'nova', speed: opts?.speed, stream: false, model: opts?.model }),
+			})
+			if (!res.ok) {
+				const msg = await res.text()
+				throw new Error(`TTS failed: ${res.status} ${msg}`)
+			}
+			const blob = await res.blob()
+			const url = URL.createObjectURL(blob)
+			a.src = url
+			await a.play()
+		},
+		[apiBase, ensureAudio, teardownMse]
+	)
 
-      const el = audioRef.current!
-      el.src = url
-      playingRef.current = true
-      setBusy(true)
-      await el.play()
-      // URL will be revoked after ended to avoid cutting off playback
-      el.onended = () => {
-        try { if (url) URL.revokeObjectURL(url) } catch {}
-        playingRef.current = false
-      }
-    } catch {
-      // noop; could fallback to SpeechSynthesis
-      playingRef.current = false
-      setBusy(false)
-    }
-    // Continue with any remaining items
-    if (!playingRef.current) playNext()
-  }, [enabled])
+	const appendNext = useCallback(() => {
+		const sb = sbRef.current
+		if (!sb) return
+		if (appendingRef.current) return
+		const next = queueRef.current.shift()
+		if (!next) return
+				try {
+					appendingRef.current = true
+					const copy = new Uint8Array(next.byteLength)
+					copy.set(next)
+					sb.appendBuffer(copy)
+		} catch {
+			// If failed, requeue and retry later
+			queueRef.current.unshift(next)
+			appendingRef.current = false
+		}
+	}, [])
 
-  const enable = useCallback(async () => {
-    setEnabled(true)
-    // warm user gesture for play
-    if (audioRef.current) {
-      try { await audioRef.current.play().catch(() => undefined) } catch {}
-      if (!audioRef.current.paused) {
-        audioRef.current.pause()
-      }
-    }
-  }, [])
+	const speakStream = useCallback(
+		async (text: string, opts?: TtsOptions) => {
+			if (!text?.trim()) return
+			if (!(window as any).MediaSource) {
+				// Fallback
+				return speak(text, opts)
+			}
+			abortRef.current?.abort()
+			teardownMse()
+			const a = ensureAudio()
+			const ms = new MediaSource()
+			msRef.current = ms
+			const url = URL.createObjectURL(ms)
+			a.src = url
+			const controller = new AbortController()
+			abortRef.current = controller
 
-  const speak = useCallback((text: string, opts?: TtsOptions) => {
-    if (!text) return
-    queueRef.current.push({ text, opts })
-    if (enabled) playNext()
-  }, [enabled, playNext])
+			const startFetch = async () => {
+				const res = await fetch(`${apiBase}/tts`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ input: text, voice: opts?.voice ?? 'nova', speed: opts?.speed, stream: true, model: opts?.model }),
+					signal: controller.signal,
+				})
+				if (!res.ok || !res.body) {
+					// Fallback to non-streaming
+					return speak(text, opts)
+				}
+				const reader = res.body.getReader()
+				const pump = async () => {
+					while (true) {
+						const { value, done } = await reader.read()
+						if (done) break
+						if (value && value.byteLength) {
+							queueRef.current.push(value instanceof Uint8Array ? value : new Uint8Array(value))
+							appendNext()
+						}
+					}
+				}
+				try { await pump() } finally {
+					// End when queue drains
+					const maybeEnd = () => {
+						if (!sbRef.current || !msRef.current) return
+						if (sbRef.current.updating || queueRef.current.length > 0) return
+						try { msRef.current.endOfStream() } catch {}
+					}
+					const i = setInterval(() => { maybeEnd() }, 120)
+					const stopCheck = () => { clearInterval(i) }
+					a.addEventListener('ended', stopCheck, { once: true })
+				}
+			}
 
-  const speakWithId = useCallback((id: string, text: string, opts?: TtsOptions) => {
-    if (!id || !text) return
-    queueRef.current.push({ id, text, opts })
-    if (enabled) playNext()
-  }, [enabled, playNext])
+			ms.addEventListener('sourceopen', () => {
+				try {
+					const sb = ms.addSourceBuffer('audio/mpeg')
+					sbRef.current = sb
+					sb.addEventListener('updateend', () => {
+						appendingRef.current = false
+						appendNext()
+					})
+					// Kick off streaming fetch after SourceBuffer exists
+					startFetch().then(() => {
+						// start playback when we have some data
+						a.play().catch(() => {})
+					})
+				} catch {
+					// If SourceBuffer type unsupported, fallback
+					speak(text, opts)
+				}
+			}, { once: true })
 
-  const prefetch = useCallback(async (id: string, text: string, opts?: TtsOptions) => {
-    if (!id || !text) return
-    if (cacheRef.current.has(id)) return
-    try {
-      const base = import.meta.env.VITE_API_BASE as string | undefined
-      if (!base) return
-      const body = JSON.stringify({ text, ...(opts || {}) })
-      const res = await fetch(`${base}/tts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body,
-      })
-      if (!res.ok) return
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      cacheRef.current.set(id, url)
-      orderRef.current.push(id)
-      // Trim cache
-      while (orderRef.current.length > MAX_CACHE) {
-        const oldest = orderRef.current.shift()
-        if (!oldest) break
-        const u = cacheRef.current.get(oldest)
-        if (u) {
-          try { URL.revokeObjectURL(u) } catch {}
-        }
-        cacheRef.current.delete(oldest)
-      }
-    } catch {
-      // ignore prefetch errors
-    }
-  }, [])
+			// Try to start play (may wait for data)
+			a.play().catch(() => {})
+		},
+		[apiBase, ensureAudio, speak, teardownMse, appendNext]
+	)
 
-  const clear = useCallback(() => {
-    queueRef.current = []
-    const el = audioRef.current
-    if (el) {
-      el.pause()
-      el.src = ''
-    }
-    playingRef.current = false
-    setBusy(false)
-  }, [])
+	const stop = useCallback(() => {
+		abortRef.current?.abort()
+		const a = ensureAudio()
+		a.pause()
+		teardownMse()
+	}, [ensureAudio, teardownMse])
 
-  return { enable, speak, speakWithId, prefetch, clear, enabled, busy }
+	const streamingSupported = useMemo(() => typeof (window as any).MediaSource !== 'undefined', [])
+
+	return { speak, speakStream, stop, streamingSupported }
 }
 
 export default useTts

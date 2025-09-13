@@ -16,8 +16,10 @@ export function Play() {
   const navigate = useNavigate()
   const [state, dispatch] = useReducer(reducer, initialState)
   const { enable, tick, correct, wrong, lifeline } = useSfx()
-  const narrator = useTts()
+  const apiBase = import.meta.env.VITE_API_BASE ?? 'http://localhost:5177'
+  const { speak, speakStream, stop, streamingSupported } = useTts(apiBase)
   const [narrationOn, setNarrationOn] = useState(true)
+  const [voice, setVoice] = useState<string>('nova')
   const [showPoll, setShowPoll] = useState(false)
   const [animatePoll, setAnimatePoll] = useState(false)
   const [pulseLevel, setPulseLevel] = useState<number | undefined>(undefined)
@@ -84,35 +86,6 @@ export function Play() {
     if (state.correct) correct()
     else wrong()
     // Narrate correctness and brief explanation
-    if (narrationOn) {
-      const q = getCurrentQuestion(state)
-      if (q) {
-        const letter = state.lockedChoice != null ? String.fromCharCode(65 + state.lockedChoice) : undefined
-        const correctness = state.correct ? 'Correct!' : 'Sorry, that was incorrect.'
-        narrator.speak(`${correctness}${letter ? ` You chose ${letter}.` : ''}`)
-        // Fetch explanation from API
-        ;(async () => {
-          try {
-            const base = import.meta.env.VITE_API_BASE as string | undefined
-            if (!base) return
-            const res = await fetch(`${base}/explain`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                prompt: q.prompt,
-                choices: q.choices,
-                correctIndex: q.correctIndex,
-                userIndex: state.lockedChoice ?? undefined,
-                style: 'concise',
-              })
-            })
-            if (!res.ok) return
-            const data = await res.json()
-            if (data?.explanation) narrator.speak(data.explanation)
-          } catch {}
-        })()
-      }
-    }
   }, [state.answered, state.correct, correct, wrong])
 
   // Navigate to results when game is over
@@ -126,65 +99,27 @@ export function Play() {
   const q = getCurrentQuestion(state)
   const choices = q?.choices ?? []
 
-  // Try to enable audio context when narration is ON (non-blocking)
+  // Auto-narrate when a new question appears
   useEffect(() => {
-    if (narrationOn) {
-      Promise.resolve(narrator.enable()).catch(() => {})
+    if (!q || !narrationOn) return
+    const intro = `Question ${state.currentQuestionIndex + 1}. ${q.prompt}. Options are: ` +
+      choices.map((c, i) => `${String.fromCharCode(65 + i)}. ${c}.`).join(' ')
+    const run = async () => {
+      try {
+        if (streamingSupported) {
+          await speakStream(intro, { voice })
+        } else {
+          await speak(intro, { voice })
+        }
+      } catch {}
     }
-  }, [narrationOn])
-
-  // Add one-time unlock on first user interaction to satisfy autoplay policies
-  useEffect(() => {
-    if (!narrationOn || narrator.enabled) return
-    const handler = () => { narrator.enable().catch(() => {}) }
-    window.addEventListener('pointerdown', handler, { once: true })
-    window.addEventListener('keydown', handler, { once: true })
-    return () => {
-      window.removeEventListener('pointerdown', handler)
-      window.removeEventListener('keydown', handler)
-    }
-  }, [narrationOn, narrator.enabled])
-  // Narrate new question and options when moving to a new one
-  useEffect(() => {
-    if (!narrationOn) return
-    const q = getCurrentQuestion(state)
-    if (!q) return
-    narrator.clear()
-    narrator.speakWithId(`q:${q.id}:preamble`, `For ${q.difficulty} difficulty. ${q.prompt}`)
-    q.choices.forEach((c, i) => {
-      const letter = String.fromCharCode(65 + i)
-      narrator.speakWithId(`q:${q.id}:choice:${i}`, `${letter}: ${c}`)
-    })
+    run()
+    return () => { stop() }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.currentQuestionIndex])
-
-  // If narration just turned ON, narrate the current question immediately
-  useEffect(() => {
-    if (!narrationOn) return
-    const q = getCurrentQuestion(state)
-    if (!q) return
-    narrator.clear()
-    narrator.speakWithId(`q:${q.id}:preamble`, `For ${q.difficulty} difficulty. ${q.prompt}`)
-    q.choices.forEach((c, i) => {
-      const letter = String.fromCharCode(65 + i)
-      narrator.speakWithId(`q:${q.id}:choice:${i}`, `${letter}: ${c}`)
-    })
-    // Only run when toggled to ON
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [narrationOn])
+  }, [q?.id, narrationOn, voice])
 
   // Prefetch next question’s narration to reduce latency
-  useEffect(() => {
-    if (!narrationOn) return
-    const nextIdx = state.currentQuestionIndex + 1
-    const nextQ = state.questions[nextIdx]
-    if (!nextQ) return
-    narrator.prefetch(`q:${nextQ.id}:preamble`, `For ${nextQ.difficulty} difficulty. ${nextQ.prompt}`)
-    nextQ.choices.forEach((c, i) => {
-      const letter = String.fromCharCode(65 + i)
-      narrator.prefetch(`q:${nextQ.id}:choice:${i}`, `${letter}: ${c}`)
-    })
-  }, [narrationOn, state.currentQuestionIndex, state.questions, narrator])
+  // Prefetching for narration removed
   const totalTime = timeForLevel(state.level)
   const timeFrac = totalTime > 0 ? state.remainingTime / totalTime : 0
   const lowTime = state.remainingTime <= 5
@@ -232,31 +167,28 @@ export function Play() {
 
         {/* Game Stage */}
         <section className="flex flex-col gap-4 min-h-[70vh]">
-          {/* Top controls: Walk Away + New Game */}
+          {/* Top controls: Voice/Narration + Walk Away + New Game */}
           <div className="flex justify-start gap-2">
-            <button
-              className={"inline-flex items-center gap-2 rounded-md border-2 px-3 py-1.5 text-xs sm:text-sm font-semibold shadow " + (narrationOn ? 'border-emerald-400/80 bg-emerald-900/40 text-emerald-100' : 'border-amber-400/80 bg-slate-900/70 text-slate-100')}
-              onClick={() => {
-                setNarrationOn(prev => {
-                  const next = !prev
-                  if (next) {
-                    // Try to enable audio context; do not block UI toggle
-                    Promise.resolve(narrator.enable()).catch(() => {})
-                  } else {
-                    narrator.clear()
-                  }
-                  return next
-                })
-              }}
-              title="Toggle AI host narration"
-              aria-label="Toggle narration"
+            <label className="flex items-center gap-2 rounded-md border-2 border-amber-400/60 bg-slate-900/60 px-3 py-1.5 text-xs sm:text-sm text-slate-100">
+              <input
+                type="checkbox"
+                checked={narrationOn}
+                onChange={(e) => setNarrationOn(e.target.checked)}
+                aria-label="Toggle narration"
+              />
+              Narration
+            </label>
+            <select
+              className="rounded-md border-2 border-amber-400/60 bg-slate-900/60 px-2 py-1.5 text-xs sm:text-sm text-slate-100"
+              value={voice}
+              onChange={(e) => setVoice(e.target.value)}
+              aria-label="Select TTS voice"
+              title={streamingSupported ? 'Streaming enabled' : 'Streaming not supported'}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                <path d="M4 10a6 6 0 0 1 6-6h2v16h-2a6 6 0 0 1-6-6Z" stroke={narrationOn ? '#34d399' : '#fbbf24'} strokeWidth="2" />
-                <path d="M18 8a4 4 0 0 1 0 8" stroke={narrationOn ? '#6ee7b7' : '#fde68a'} strokeWidth="2" strokeLinecap="round"/>
-              </svg>
-              <span>{narrationOn ? 'Narration On' : 'Narration Off'}</span>
-            </button>
+              <option value="nova">Nova</option>
+              <option value="alloy">Alloy</option>
+              <option value="shimmer">Shimmer</option>
+            </select>
             <button
               className="inline-flex items-center gap-2 rounded-md border-2 border-amber-400/80 bg-slate-900/70 px-3 py-1.5 text-xs sm:text-sm font-semibold text-slate-100 shadow hover:bg-slate-800/80 disabled:opacity-60"
               onClick={() => dispatch({ type: 'WALK_AWAY' })}
@@ -406,7 +338,7 @@ export function Play() {
                       <button
                         key={i}
                         disabled={showResult || state.remainingTime === 0}
-                        onClick={() => { enable(); dispatch({ type: 'SELECT_CHOICE', index: i }) }}
+                        onClick={() => { enable(); stop(); dispatch({ type: 'SELECT_CHOICE', index: i }) }}
                         className={className}
                         aria-pressed={isLocked}
                         aria-disabled={showResult || state.remainingTime === 0}
@@ -424,7 +356,7 @@ export function Play() {
                 <div className="flex gap-2 pt-2">
                   <button
                     className="rounded nm-gradient-bg px-4 py-2 text-sm font-semibold text-slate-900 disabled:opacity-60 shadow focus:outline-none focus:ring-2 focus:ring-amber-300"
-                    onClick={() => { enable(); dispatch({ type: 'LOCK_IN' }) }}
+                    onClick={() => { enable(); stop(); dispatch({ type: 'LOCK_IN' }) }}
                     disabled={state.lockedChoice == null || state.answered || state.remainingTime === 0}
                     aria-disabled={state.lockedChoice == null || state.answered || state.remainingTime === 0}
                   >
