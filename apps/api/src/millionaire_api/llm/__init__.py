@@ -16,11 +16,9 @@ class LLMClient:
 def make_llm_client(
     provider: str,
     *,
-    openai_api_key: Optional[str] = None,
-    openai_model: Optional[str] = None,
-    openai_base_url: Optional[str] = None,
-    anthropic_api_key: Optional[str] = None,
-    anthropic_model: Optional[str] = None,
+    llm_api_key: Optional[str] = None,
+    llm_model: Optional[str] = None,
+    llm_base_url: Optional[str] = None
 ) -> Optional[LLMClient]:
     provider = (provider or "").strip().lower()
     if provider in ("", "none"):
@@ -28,14 +26,14 @@ def make_llm_client(
     if provider in ("openai", "gpt", "oai"):
         from .openai import OpenAIClient, DEFAULT_OPENAI_MODEL, HARDCODED_OPENAI_API_KEY
 
-        final_key = HARDCODED_OPENAI_API_KEY or (openai_api_key or os.getenv("OPENAI_API_KEY", ""))
-        final_model = openai_model or os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)
-        base_url = openai_base_url or os.getenv("OPENAI_BASE_URL")
+        final_key = HARDCODED_OPENAI_API_KEY or (llm_api_key or os.getenv("OPENAI_API_KEY", ""))
+        final_model = llm_model or os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)
+        base_url = llm_base_url or os.getenv("OPENAI_BASE_URL")
         return OpenAIClient(api_key=final_key, model=final_model, base_url=base_url)
     if provider in ("anthropic", "claude"):
         from .anthropic import AnthropicClient, DEFAULT_ANTHROPIC_MODEL, HARDCODED_ANTHROPIC_API_KEY
 
-        final_key = HARDCODED_ANTHROPIC_API_KEY or (anthropic_api_key or os.getenv("ANTHROPIC_API_KEY", ""))
-        final_model = anthropic_model or os.getenv("ANTHROPIC_MODEL", DEFAULT_ANTHROPIC_MODEL)
+        final_key = HARDCODED_ANTHROPIC_API_KEY or (llm_api_key or os.getenv("ANTHROPIC_API_KEY", ""))
+        final_model = llm_model or os.getenv("ANTHROPIC_MODEL", DEFAULT_ANTHROPIC_MODEL)
         return AnthropicClient(api_key=final_key, model=final_model)
     raise ValueError(f"Unknown LLM provider: {provider}")

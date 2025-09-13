@@ -4,8 +4,8 @@ import json
 import os
 from typing import Any, Dict, List, Optional
 
-import aiohttp
 import asyncio
+import anthropic
 
 from . import LLMClient, LLMError
 
@@ -25,56 +25,38 @@ class AnthropicClient(LLMClient):
 
         prompt = _build_prompt(categories, difficulties)
 
-        url = "https://api.anthropic.com/v1/messages"
-        headers = {
-            "x-api-key": self.api_key,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-            "User-Agent": "iliad/0.5 millionaire-api/0.1.0",
-        }
+        client = anthropic.Anthropic(api_key=self.api_key)
 
-        payload: Dict[str, Any] = {
-            "model": self.model,
-            "max_tokens": 1200,
-            "temperature": 0.7,
-            "system": _SYSTEM_PROMPT,
-            # Request JSON-only output when supported
-            "response_format": {"type": "json_object"},
-            "messages": [
-                {"role": "user", "content": prompt},
-            ],
-        }
+        def _call_sync() -> str:
+            resp = client.messages.create(
+                model=self.model,
+                max_tokens=1200,
+                temperature=0.7,
+                system=_SYSTEM_PROMPT,
+                response_format={"type": "json_object"},
+                messages=[{"role": "user", "content": prompt}],
+            )
+            try:
+                # resp.content is a list of content blocks; text in .text
+                return "".join(b.text for b in resp.content if getattr(b, "type", "text") == "text")
+            except Exception as e:  # pragma: no cover
+                raise LLMError(f"Anthropic response parse error: {e}")
 
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=40)) as session:
-            async def _post_once() -> str:
-                async with session.post(url, headers=headers, json=payload) as resp:
-                    if resp.status >= 400:
-                        text = await resp.text()
-                        raise LLMError(f"Anthropic HTTP {resp.status}: {text[:500]}")
-                    data = await resp.json()
-                    try:
-                        # messages response: content is a list of blocks with type 'text'
-                        blocks = data.get("content", [])
-                        text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
-                    except Exception as e:
-                        raise LLMError(f"Anthropic response parse error: {e} :: {str(data)[:500]}")
-                    return text
-
-            attempts, delay = 0, 0.8
-            while True:
-                try:
-                    text = await _post_once()
-                    break
-                except LLMError as e:
-                    msg = str(e)
-                    if any(code in msg for code in ["HTTP 429", "HTTP 500", "HTTP 502", "HTTP 503", "HTTP 504"]):
-                        attempts += 1
-                        if attempts >= 3:
-                            raise
-                        await asyncio.sleep(delay)
-                        delay *= 2
-                        continue
-                    raise
+        attempts, delay = 0, 0.8
+        while True:
+            try:
+                text = await asyncio.to_thread(_call_sync)
+                break
+            except Exception as e:
+                msg = str(e)
+                if any(code in msg for code in ["429", "500", "502", "503", "504"]):
+                    attempts += 1
+                    if attempts >= 3:
+                        raise LLMError(f"Anthropic error after retries: {msg}")
+                    await asyncio.sleep(delay)
+                    delay *= 2
+                    continue
+                raise LLMError(f"Anthropic error: {msg}")
 
         return _parse_questions(text, provider_tag="anthropic", categories=categories, difficulties=difficulties)
 

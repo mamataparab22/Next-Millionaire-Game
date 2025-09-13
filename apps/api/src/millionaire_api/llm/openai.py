@@ -4,8 +4,8 @@ import json
 import os
 from typing import Any, Dict, List, Optional
 
-import aiohttp
 import asyncio
+from openai import AzureOpenAI
 
 from . import LLMClient, LLMError
 
@@ -17,64 +17,56 @@ HARDCODED_OPENAI_API_KEY: Optional[str] = None
 
 class OpenAIClient(LLMClient):
     def __init__(self, *, api_key: str, model: str = DEFAULT_OPENAI_MODEL, base_url: Optional[str] = None):
-        self.api_key = (api_key or "").strip()
+        # For Azure OpenAI, prefer AZURE_* env vars; api_key param used as fallback
+        endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or (base_url or os.getenv("OPENAI_BASE_URL"))
+        api_key_final = os.getenv("AZURE_OPENAI_API_KEY") or (api_key or "")
+        api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-06-01")
+
+        if not endpoint or not api_key_final:
+            raise ValueError("Azure OpenAI not configured: set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY")
+
+        self.client = AzureOpenAI(
+            api_key=api_key_final,
+            api_version=api_version,
+            azure_endpoint=endpoint,
+        )
+        # For Azure, 'model' is the deployment name
         self.model = model
-        # Support OpenAI-compatible providers (Azure, local, etc.)
-        self.base_url = (base_url or os.getenv("OPENAI_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
 
     async def generate(self, *, categories: List[str], difficulties: List[str]) -> List[Dict[str, Any]]:
-        if not self.api_key:
-            raise LLMError("OPENAI_API_KEY not configured")
-
         prompt = _build_prompt(categories, difficulties)
 
-        url = f"{self.base_url}/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "User-Agent": "iliad/0.5 millionaire-api/0.1.0",
-        }
-        payload: Dict[str, Any] = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            # Try JSON mode if supported; many compat endpoints simply ignore this
-            "response_format": {"type": "json_object"},
-            "temperature": 0.7,
-            "max_tokens": 1200,
-        }
+        def _call_sync() -> str:
+            resp = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.7,
+                max_tokens=1200,
+            )
+            try:
+                return resp.choices[0].message.content or ""
+            except Exception as e:  # pragma: no cover
+                raise LLMError(f"OpenAI response parse error: {e}")
 
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=40)) as session:
-            async def _post_once() -> str:
-                async with session.post(url, headers=headers, json=payload) as resp:
-                    if resp.status >= 400:
-                        text = await resp.text()
-                        raise LLMError(f"OpenAI HTTP {resp.status}: {text[:500]}")
-                    data = await resp.json()
-                    try:
-                        content = data["choices"][0]["message"]["content"]
-                    except Exception as e:  # pragma: no cover - best-effort parse
-                        raise LLMError(f"OpenAI response parse error: {e} :: {str(data)[:500]}")
-                    return content
-
-            # minimal retries on transient errors
-            attempts, delay = 0, 0.8
-            while True:
-                try:
-                    raw = await _post_once()
-                    break
-                except LLMError as e:
-                    msg = str(e)
-                    if any(code in msg for code in ["HTTP 429", "HTTP 500", "HTTP 502", "HTTP 503", "HTTP 504"]):
-                        attempts += 1
-                        if attempts >= 3:
-                            raise
-                        await asyncio.sleep(delay)
-                        delay *= 2
-                        continue
-                    raise
+        attempts, delay = 0, 0.8
+        while True:
+            try:
+                raw = await asyncio.to_thread(_call_sync)
+                break
+            except Exception as e:
+                msg = str(e)
+                if any(code in msg for code in ["429", "500", "502", "503", "504"]):
+                    attempts += 1
+                    if attempts >= 3:
+                        raise LLMError(f"OpenAI error after retries: {msg}")
+                    await asyncio.sleep(delay)
+                    delay *= 2
+                    continue
+                raise LLMError(f"OpenAI error: {msg}")
 
         return _parse_questions(raw, provider_tag="openai", categories=categories, difficulties=difficulties)
 
