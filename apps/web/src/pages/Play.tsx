@@ -10,11 +10,14 @@ import { saveResults, saveSession, loadSession, clearSession } from '../game/sto
 import { timeForLevel, prizeForLevel } from '../game/config'
 import { useNavigate } from 'react-router-dom'
 import useSfx from '../hooks/useSfx'
+import useTts from '../hooks/useTts'
 
 export function Play() {
   const navigate = useNavigate()
   const [state, dispatch] = useReducer(reducer, initialState)
   const { enable, tick, correct, wrong, lifeline } = useSfx()
+  const narrator = useTts()
+  const [narrationOn, setNarrationOn] = useState(false)
   const [showPoll, setShowPoll] = useState(false)
   const [animatePoll, setAnimatePoll] = useState(false)
   const [pulseLevel, setPulseLevel] = useState<number | undefined>(undefined)
@@ -80,6 +83,36 @@ export function Play() {
     if (!state.answered || state.correct == null) return
     if (state.correct) correct()
     else wrong()
+    // Narrate correctness and brief explanation
+    if (narrationOn) {
+      const q = getCurrentQuestion(state)
+      if (q) {
+        const letter = state.lockedChoice != null ? String.fromCharCode(65 + state.lockedChoice) : undefined
+        const correctness = state.correct ? 'Correct!' : 'Sorry, that was incorrect.'
+        narrator.speak(`${correctness}${letter ? ` You chose ${letter}.` : ''}`)
+        // Fetch explanation from API
+        ;(async () => {
+          try {
+            const base = import.meta.env.VITE_API_BASE as string | undefined
+            if (!base) return
+            const res = await fetch(`${base}/explain`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                prompt: q.prompt,
+                choices: q.choices,
+                correctIndex: q.correctIndex,
+                userIndex: state.lockedChoice ?? undefined,
+                style: 'concise',
+              })
+            })
+            if (!res.ok) return
+            const data = await res.json()
+            if (data?.explanation) narrator.speak(data.explanation)
+          } catch {}
+        })()
+      }
+    }
   }, [state.answered, state.correct, correct, wrong])
 
   // Navigate to results when game is over
@@ -92,6 +125,19 @@ export function Play() {
 
   const q = getCurrentQuestion(state)
   const choices = q?.choices ?? []
+  // Narrate new question and options when moving to a new one
+  useEffect(() => {
+    if (!narrationOn) return
+    const q = getCurrentQuestion(state)
+    if (!q) return
+    narrator.clear()
+    narrator.speak(`For ${q.difficulty} difficulty. ${q.prompt}`)
+    q.choices.forEach((c, i) => {
+      const letter = String.fromCharCode(65 + i)
+      narrator.speak(`${letter}: ${c}`)
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.currentQuestionIndex])
   const totalTime = timeForLevel(state.level)
   const timeFrac = totalTime > 0 ? state.remainingTime / totalTime : 0
   const lowTime = state.remainingTime <= 5
@@ -141,6 +187,18 @@ export function Play() {
         <section className="flex flex-col gap-4 min-h-[70vh]">
           {/* Top controls: Walk Away + New Game */}
           <div className="flex justify-start gap-2">
+            <button
+              className={"inline-flex items-center gap-2 rounded-md border-2 px-3 py-1.5 text-xs sm:text-sm font-semibold shadow " + (narrationOn ? 'border-emerald-400/80 bg-emerald-900/40 text-emerald-100' : 'border-amber-400/80 bg-slate-900/70 text-slate-100')}
+              onClick={async () => { if (!narrationOn) { await narrator.enable() } setNarrationOn(v => !v) }}
+              title="Toggle AI host narration"
+              aria-label="Toggle narration"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path d="M4 10a6 6 0 0 1 6-6h2v16h-2a6 6 0 0 1-6-6Z" stroke={narrationOn ? '#34d399' : '#fbbf24'} strokeWidth="2" />
+                <path d="M18 8a4 4 0 0 1 0 8" stroke={narrationOn ? '#6ee7b7' : '#fde68a'} strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+              <span className="hidden sm:inline">{narrationOn ? 'Narration On' : 'Narration Off'}</span>
+            </button>
             <button
               className="inline-flex items-center gap-2 rounded-md border-2 border-amber-400/80 bg-slate-900/70 px-3 py-1.5 text-xs sm:text-sm font-semibold text-slate-100 shadow hover:bg-slate-800/80 disabled:opacity-60"
               onClick={() => dispatch({ type: 'WALK_AWAY' })}
