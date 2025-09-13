@@ -31,43 +31,8 @@ export function Play() {
       setLoadError(null)
       return
     }
-  // Load questions from API using categories chosen on Home
-    const base = import.meta.env.VITE_API_BASE as string | undefined
-    const categoriesRaw = sessionStorage.getItem('nm.categories') || ''
-    const categories = categoriesRaw.split(',').map((s) => s.trim()).filter(Boolean)
-    if (!base) {
-      setLoadError('API base URL is not configured.')
-      setLoadingQs(false)
-      return
-    }
-    setLoadingQs(true)
-    const controller = new AbortController()
-    fetch(`${base}/questions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ categories, count: 15 }),
-      signal: controller.signal,
-    })
-      .then(async (r) => {
-        if (!r.ok) {
-          try {
-            const data = await r.json()
-            const code = data?.detail?.code
-            if (code === 'LLM_NOT_CONFIGURED') throw new Error('LLM is not configured on the server.')
-          } catch {}
-          throw new Error('Failed to load questions from the server.')
-        }
-        const data = await r.json()
-        if (!Array.isArray(data?.questions) || data.questions.length === 0) throw new Error('No questions returned by the server.')
-  if (state.questions.length === 0) dispatch({ type: 'LOAD_QUESTIONS', questions: data.questions })
-        setLoadError(null)
-      })
-      .catch((err: any) => {
-        if (err?.name === 'AbortError') return
-        setLoadError(err?.message || 'Failed to load questions.')
-      })
-      .finally(() => setLoadingQs(false))
-    return () => controller.abort()
+    setLoadError('No active game. Please start from Home and select categories.')
+    setLoadingQs(false)
   }, [])
 
   // Persist session on changes

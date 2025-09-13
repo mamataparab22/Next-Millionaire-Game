@@ -22,10 +22,7 @@ const FALLBACK_CATEGORIES = [
 
 export function Home() {
   const navigate = useNavigate()
-  const [selected, setSelected] = useState<string[]>(() => {
-    const raw = sessionStorage.getItem('nm.categories')
-    return raw ? raw.split(',').map((s) => s.trim()).filter(Boolean) : []
-  })
+  const [selected, setSelected] = useState<string[]>([])
   const [categories, setCategories] = useState<string[]>(FALLBACK_CATEGORIES)
   const [loading, setLoading] = useState(false)
   const [usedFallback, setUsedFallback] = useState(false)
@@ -37,7 +34,6 @@ export function Home() {
     setSelected((prev) => {
       const has = prev.includes(c)
       const next = has ? prev.filter((x) => x !== c) : [...prev, c]
-      sessionStorage.setItem('nm.categories', next.join(','))
       return next
     })
   }
@@ -124,15 +120,13 @@ export function Home() {
 
               try {
                 const base = import.meta.env.VITE_API_BASE as string | undefined
-                const categoriesRaw = sessionStorage.getItem('nm.categories') || ''
-                const categories = categoriesRaw.split(',').map((s) => s.trim()).filter(Boolean)
                 if (!base) {
                   throw new Error('API_UNAVAILABLE')
                 }
                 const r = await fetch(`${base}/questions`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ categories, count: 15 }),
+                  body: JSON.stringify({ categories: selected, count: 15 }),
                 })
                 if (!r.ok) {
                   let code = 'UNKNOWN'
