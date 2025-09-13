@@ -8,6 +8,7 @@ $ErrorActionPreference = 'Stop'
 
 function Write-Info($msg) { Write-Host "[run_all] $msg" -ForegroundColor Cyan }
 function Write-Err($msg) { Write-Host "[run_all][error] $msg" -ForegroundColor Red }
+function Write-DebugLog($tag, $msg) { Write-Host ("[{0}] {1}" -f $tag, $msg) -ForegroundColor DarkGray }
 
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ApiDir = Join-Path $Root 'apps/api'
@@ -15,8 +16,28 @@ $WebDir = Join-Path $Root 'apps/web'
 
 $ApiVenvDir = Join-Path $ApiDir '.venv'
 $ApiVenvPython = Join-Path $ApiVenvDir 'Scripts/python.exe'
+$ApiEnvPath = Join-Path $ApiDir '.env'
 
 if (-not $ViteApiBase) { $ViteApiBase = "http://localhost:$ApiPort" }
+
+# Surface key configuration before starting
+Write-Info "Resolved VITE_API_BASE=$ViteApiBase"
+if (Test-Path $ApiEnvPath) {
+  try {
+    $envLines = Get-Content -Path $ApiEnvPath -ErrorAction Stop | Where-Object { $_ -match '^[A-Za-z_][A-Za-z0-9_]*=' }
+    $keys = $envLines | ForEach-Object { ($_ -split '=', 2)[0] }
+    $llmKeys = $keys | Where-Object { $_ -match '^(LLM_|OPENAI_|AZURE_|ANTHROPIC_|GEMINI_)' }
+    if ($llmKeys.Count -gt 0) {
+      Write-Info ("API .env found with keys: {0}" -f ($llmKeys -join ', '))
+    } else {
+      Write-Info "API .env found (no LLM-related keys detected)"
+    }
+  } catch {
+    Write-Err "Failed to read API .env: $($_.Exception.Message)"
+  }
+} else {
+  Write-Info "API .env not found at $ApiEnvPath"
+}
 
 # Detect JS package manager
 $pm = $null
@@ -65,7 +86,7 @@ Write-Info "Starting API (FastAPI) on :$ApiPort"
 $apiJob = Start-Job -Name 'runall-api' -ScriptBlock {
   Param($ApiDir, $PythonExe, $Port)
   Set-Location $ApiDir
-  & $PythonExe -m uvicorn --app-dir src millionaire_api.main:app --host 0.0.0.0 --port $Port --reload
+  & $PythonExe -m uvicorn --app-dir src millionaire_api.main:app --host 0.0.0.0 --port $Port --reload --log-level debug
 } -ArgumentList $ApiDir, $ApiVenvPython, $ApiPort
 
 # Start web (Vite) in background job
@@ -97,6 +118,21 @@ if ($webState -ne 'Running') {
   Receive-Job -Job $webJob -Keep -ErrorAction SilentlyContinue | Out-Host
 }
 
+# Live log pump: stream outputs from both jobs to the console
+$global:runallPumpTimer = New-Object Timers.Timer
+$global:runallPumpTimer.Interval = 300
+$null = Register-ObjectEvent -InputObject $global:runallPumpTimer -EventName Elapsed -SourceIdentifier "runall-pump" -Action {
+  try {
+    $outA = Receive-Job -Name 'runall-api' -Keep -ErrorAction SilentlyContinue
+    if ($outA) { $outA | ForEach-Object { Write-DebugLog 'api' $_ } }
+  } catch {}
+  try {
+    $outW = Receive-Job -Name 'runall-web' -Keep -ErrorAction SilentlyContinue
+    if ($outW) { $outW | ForEach-Object { Write-DebugLog 'web' $_ } }
+  } catch {}
+}
+$global:runallPumpTimer.Start()
+
 # Helper: wait for URL readiness
 function Wait-Url {
   param(
@@ -113,10 +149,22 @@ function Wait-Url {
         return $true
       }
     } catch {
+      Write-DebugLog $Name ("Waiting on {0}: {1}" -f $Url, $_.Exception.Message)
       Start-Sleep -Milliseconds 400
     }
   }
   Write-Err "$Name did not become ready: $Url (timeout ${TimeoutSec}s)"
+  # Dump last lines from job logs for context
+  try {
+    if ($Name -eq 'API') {
+      $apiDump = Receive-Job -Name 'runall-api' -Keep -ErrorAction SilentlyContinue | Select-Object -Last 80
+      if ($apiDump) { Write-Host "[api][recent]" -ForegroundColor DarkGray; $apiDump | Out-Host }
+    }
+    if ($Name -eq 'Web') {
+      $webDump = Receive-Job -Name 'runall-web' -Keep -ErrorAction SilentlyContinue | Select-Object -Last 80
+      if ($webDump) { Write-Host "[web][recent]" -ForegroundColor DarkGray; $webDump | Out-Host }
+    }
+  } catch {}
   return $false
 }
 
@@ -133,6 +181,9 @@ try {
 }
 finally {
   Write-Info "Stopping jobs..."
+  try { $global:runallPumpTimer.Stop() } catch {}
+  try { Unregister-Event -SourceIdentifier 'runall-pump' -ErrorAction SilentlyContinue } catch {}
+  try { $global:runallPumpTimer.Dispose() } catch {}
   if ($webJob) {
     Stop-Job -Job $webJob -ErrorAction SilentlyContinue
     Receive-Job -Job $webJob -Keep -ErrorAction SilentlyContinue | Out-Host
