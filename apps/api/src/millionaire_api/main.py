@@ -214,8 +214,8 @@ class TtsRequest(BaseModel):
 
 
 def _make_openai_client_for_general() -> tuple[object, str, bool]:
-    """Create an OpenAI or AzureOpenAI client based on generic LLM_* envs.
-    Returns (client, model, is_azure).
+    """Create an OpenAI or AzureOpenAI client for general chat/completions.
+    Returns (client, model, is_azure). Uses LLM_* envs.
     """
     provider = (LLM_PROVIDER or "openai").lower()
     settings = resolve_llm_settings(provider)
@@ -235,6 +235,24 @@ def _make_openai_client_for_general() -> tuple[object, str, bool]:
     return client, model, False
 
 
+def _make_openai_client_for_tts() -> tuple[object, bool]:
+    """Create an OpenAI client for TTS using TTS_* overrides if provided.
+    Returns (client, is_azure).
+    """
+    # Use the same key as LLM; allow base URL override
+    tts_api_key = env("LLM_API_KEY") or ""
+    tts_base_url = env("TTS_BASE_URL") or env("LLM_BASE_URL")
+    if not tts_api_key:
+        raise HTTPException(status_code=503, detail={
+            "code": "TTS_NOT_CONFIGURED",
+            "message": "TTS is not configured. Set LLM_API_KEY along with TTS_BASE_URL or LLM_BASE_URL.",
+        })
+    # If the generic env suggests Azure (api version set), we still block TTS Azure path
+    if env("LLM_API_VERSION"):
+        return AzureOpenAI(api_key=tts_api_key, api_version=str(env("LLM_API_VERSION")), azure_endpoint=tts_base_url), True
+    return OpenAI(api_key=tts_api_key, base_url=tts_base_url), False
+
+
 @app.post("/tts", tags=["audio"], summary="Synthesize speech from text", response_class=Response)
 async def tts(req: TtsRequest) -> Response:
     """Return audio bytes (mp3 by default) synthesized from provided text using OpenAI TTS."""
@@ -251,7 +269,7 @@ async def tts(req: TtsRequest) -> Response:
         raise HTTPException(status_code=400, detail={"code": "UNSUPPORTED_FORMAT", "message": f"Unsupported audio format: {out_format}"})
 
     try:
-        client, _, is_azure = _make_openai_client_for_general()
+        client, is_azure = _make_openai_client_for_tts()
     except HTTPException:
         raise
     except Exception as e:
