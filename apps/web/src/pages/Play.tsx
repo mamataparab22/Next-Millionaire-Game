@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useState } from 'react'
+import { useEffect, useMemo, useReducer, useState, useRef } from 'react'
 import { PrizeLadder } from '../components/PrizeLadder'
 import { Lifelines } from '../components/Lifelines'
 import { Card } from '../components/Card'
@@ -10,15 +10,19 @@ import { ConfettiBurst } from '../components/ConfettiBurst'
 import { saveResults, saveSession, loadSession, clearSession } from '../game/storage'
 import { timeForLevel, prizeForLevel } from '../game/config'
 import { useNavigate } from 'react-router-dom'
+import useSfx from '../hooks/useSfx'
 
 export function Play() {
   const navigate = useNavigate()
   const [state, dispatch] = useReducer(reducer, initialState)
+  const { enable, tick, correct, wrong, lifeline } = useSfx()
   const [showPoll, setShowPoll] = useState(false)
   const [animatePoll, setAnimatePoll] = useState(false)
   const [pulseLevel, setPulseLevel] = useState<number | undefined>(undefined)
   const [loadingQs, setLoadingQs] = useState(false)
   const [usedFallback, setUsedFallback] = useState(false)
+  const [showResults, setShowResults] = useState(false)
+  const lastTimeRef = useRef<number>(0)
 
   useEffect(() => {
   const snapshot = loadSession()
@@ -77,6 +81,17 @@ export function Play() {
     return () => clearInterval(id)
   }, [state.answered, state.gameOver, state.remainingTime])
 
+  // Play tick when the timer decreases (only for first 10 questions)
+  useEffect(() => {
+    if (state.answered || state.gameOver) return
+    const showTimer = state.currentQuestionIndex < 10
+    if (!showTimer) return
+    if (state.remainingTime < lastTimeRef.current) {
+      tick()
+    }
+    lastTimeRef.current = state.remainingTime
+  }, [state.remainingTime, state.answered, state.gameOver, state.currentQuestionIndex, tick])
+
   // Fire TIME_UP when it hits zero
   useEffect(() => {
     if (!state.answered && state.remainingTime === 0) {
@@ -93,11 +108,18 @@ export function Play() {
     }
   }, [state.answered, state.correct, state.level])
 
+  // Play correct/wrong once when answered
+  useEffect(() => {
+    if (!state.answered || state.correct == null) return
+    if (state.correct) correct()
+    else wrong()
+  }, [state.answered, state.correct, correct, wrong])
+
   // Navigate to results when game is over
   useEffect(() => {
     if (state.gameOver) {
       saveResults({ winnings: state.winnings, level: state.level, lastSafeLevel: state.lastSafeLevel })
-      navigate('/results')
+  setShowResults(true)
     }
   }, [state.gameOver, state.winnings, state.level, state.lastSafeLevel, navigate])
 
@@ -288,7 +310,7 @@ export function Play() {
                       <button
                         key={i}
                         disabled={showResult || state.remainingTime === 0}
-                        onClick={() => dispatch({ type: 'SELECT_CHOICE', index: i })}
+                        onClick={() => { enable(); dispatch({ type: 'SELECT_CHOICE', index: i }) }}
                         className={className}
                         aria-pressed={isLocked}
                         aria-disabled={showResult || state.remainingTime === 0}
@@ -306,7 +328,7 @@ export function Play() {
                 <div className="flex gap-2 pt-2">
                   <button
                     className="rounded nm-gradient-bg px-4 py-2 text-sm font-semibold text-slate-900 disabled:opacity-60 shadow focus:outline-none focus:ring-2 focus:ring-amber-300"
-                    onClick={() => dispatch({ type: 'LOCK_IN' })}
+                    onClick={() => { enable(); dispatch({ type: 'LOCK_IN' }) }}
                     disabled={state.lockedChoice == null || state.answered || state.remainingTime === 0}
                     aria-disabled={state.lockedChoice == null || state.answered || state.remainingTime === 0}
                   >
@@ -377,13 +399,15 @@ export function Play() {
         {/* Sidebar */}
         <aside className="space-y-4">
           <Lifelines
-            onUseFifty={() => dispatch({ type: 'USE_FIFTY_FIFTY' })}
+            onUseFifty={() => { enable(); dispatch({ type: 'USE_FIFTY_FIFTY' }); lifeline(); }}
             onUseAudience={() => {
+              enable()
               dispatch({ type: 'USE_AUDIENCE_POLL' })
               setShowPoll(true)
               setTimeout(() => setAnimatePoll(true), 30)
+              lifeline()
             }}
-            onUseSwitch={() => dispatch({ type: 'USE_SWITCH_QUESTION' })}
+            onUseSwitch={() => { enable(); dispatch({ type: 'USE_SWITCH_QUESTION' }); lifeline(); }}
             fiftyUsed={state.usedLifelines.fiftyFifty}
             audienceUsed={state.usedLifelines.audience}
             switchUsed={state.usedLifelines.switch}
@@ -392,6 +416,31 @@ export function Play() {
           <PrizeLadder currentLevel={state.level} lastSafeLevel={state.lastSafeLevel} pulseLevel={pulseLevel} />
         </aside>
       </div>
+
+      {showResults && (
+        <Modal onClose={() => setShowResults(false)} ariaLabelledby="results-title" closeOnBackdropClick>
+          <section className="space-y-4 text-center">
+            <h2 id="results-title" className="text-2xl font-bold">Results</h2>
+            <p className="text-xl font-extrabold"><span className="nm-gradient-text">Final Winnings: {formattedWinnings}</span></p>
+            <div className="flex justify-center gap-2">
+              <button
+                onClick={() => setShowResults(false)}
+                className="rounded bg-slate-700 px-4 py-2 text-sm font-semibold text-white"
+                aria-label="Close results"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => { clearSession(); navigate('/') }}
+                className="rounded nm-gradient-bg px-4 py-2 text-sm font-semibold text-slate-900"
+                aria-label="Play again"
+              >
+                Play Again
+              </button>
+            </div>
+          </section>
+        </Modal>
+      )}
     </main>
   )
 }
