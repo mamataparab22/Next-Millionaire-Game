@@ -14,6 +14,7 @@ export function useTts(apiBase: string) {
 	const sbRef = useRef<SourceBuffer | null>(null)
 	const queueRef = useRef<Uint8Array[]>([])
 	const appendingRef = useRef<boolean>(false)
+	const startTimerRef = useRef<number | null>(null)
 
 	const ensureAudio = useCallback(() => {
 		if (!audioRef.current) {
@@ -91,80 +92,99 @@ export function useTts(apiBase: string) {
 				// Fallback
 				return speak(text, opts)
 			}
-			abortRef.current?.abort()
-			teardownMse()
-			const a = ensureAudio()
-			const ms = new MediaSource()
-			msRef.current = ms
-			const url = URL.createObjectURL(ms)
-			a.src = url
-			const controller = new AbortController()
-			abortRef.current = controller
 
-			const startFetch = async () => {
-				const res = await fetch(`${apiBase}/tts`, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ input: text, voice: opts?.voice ?? 'nova', speed: opts?.speed, stream: true, model: opts?.model }),
-					signal: controller.signal,
-				})
-				if (!res.ok || !res.body) {
-					// Fallback to non-streaming
-					return speak(text, opts)
-				}
-				const reader = res.body.getReader()
-				const pump = async () => {
-					while (true) {
-						const { value, done } = await reader.read()
-						if (done) break
-						if (value && value.byteLength) {
-							queueRef.current.push(value instanceof Uint8Array ? value : new Uint8Array(value))
-							appendNext()
-						}
-					}
-				}
-				try { await pump() } finally {
-					// End when queue drains
-					const maybeEnd = () => {
-						if (!sbRef.current || !msRef.current) return
-						if (sbRef.current.updating || queueRef.current.length > 0) return
-						try { msRef.current.endOfStream() } catch {}
-					}
-					const i = setInterval(() => { maybeEnd() }, 120)
-					const stopCheck = () => { clearInterval(i) }
-					a.addEventListener('ended', stopCheck, { once: true })
-				}
+			// Debounce start to avoid StrictMode double-invoke/rapid re-renders aborting immediately
+			if (startTimerRef.current != null) {
+				clearTimeout(startTimerRef.current)
+				startTimerRef.current = null
 			}
 
-			ms.addEventListener('sourceopen', () => {
-				try {
-					const sb = ms.addSourceBuffer('audio/mpeg')
-					sbRef.current = sb
-					sb.addEventListener('updateend', () => {
-						appendingRef.current = false
-						appendNext()
-					})
-					// Kick off streaming fetch after SourceBuffer exists
-					startFetch().then(() => {
-						// start playback when we have some data
-						a.play().catch(() => {})
-					})
-				} catch {
-					// If SourceBuffer type unsupported, fallback
-					speak(text, opts)
-				}
-			}, { once: true })
+			startTimerRef.current = window.setTimeout(() => {
+				abortRef.current?.abort()
+				teardownMse()
+				const a = ensureAudio()
+				const ms = new MediaSource()
+				msRef.current = ms
+				const url = URL.createObjectURL(ms)
+				a.src = url
+				const controller = new AbortController()
+				abortRef.current = controller
 
-			// Try to start play (may wait for data)
-			a.play().catch(() => {})
+				const startFetch = async () => {
+					const res = await fetch(`${apiBase}/tts`, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ input: text, voice: opts?.voice ?? 'nova', speed: opts?.speed, stream: true, model: opts?.model }),
+						signal: controller.signal,
+					})
+					if (!res.ok || !res.body) {
+						// Fallback to non-streaming
+						return speak(text, opts)
+					}
+					const reader = res.body.getReader()
+					const pump = async () => {
+						while (true) {
+							const { value, done } = await reader.read()
+							if (done) break
+							if (value && value.byteLength) {
+								queueRef.current.push(value instanceof Uint8Array ? value : new Uint8Array(value))
+								appendNext()
+							}
+						}
+					}
+					try { await pump() } finally {
+						// End when queue drains
+						const maybeEnd = () => {
+							if (!sbRef.current || !msRef.current) return
+							if (sbRef.current.updating || queueRef.current.length > 0) return
+							try { msRef.current.endOfStream() } catch {}
+						}
+						const i = setInterval(() => { maybeEnd() }, 120)
+						const stopCheck = () => { clearInterval(i) }
+						a.addEventListener('ended', stopCheck, { once: true })
+					}
+				}
+
+				ms.addEventListener('sourceopen', () => {
+					try {
+						const sb = ms.addSourceBuffer('audio/mpeg')
+						sbRef.current = sb
+						sb.addEventListener('updateend', () => {
+							appendingRef.current = false
+							appendNext()
+						})
+						// Kick off streaming fetch after SourceBuffer exists
+						startFetch()
+							.then(() => {
+								// start playback when we have some data
+								a.play().catch(() => {})
+							})
+							.catch((err) => {
+								// Ignore AbortError; fallback to non-streaming for other errors
+								if ((err as any)?.name === 'AbortError' || String(err)?.includes('AbortError')) return
+								speak(text, opts)
+							})
+					} catch {
+						// If SourceBuffer type unsupported, fallback
+						speak(text, opts)
+					}
+				}, { once: true })
+
+				// Try to start play (may wait for data)
+				a.play().catch(() => {})
+			}, 180)
 		},
 		[apiBase, ensureAudio, speak, teardownMse, appendNext]
 	)
 
 	const stop = useCallback(() => {
-		abortRef.current?.abort()
+		if (startTimerRef.current != null) {
+			clearTimeout(startTimerRef.current)
+			startTimerRef.current = null
+		}
+		try { abortRef.current?.abort() } catch {}
 		const a = ensureAudio()
-		a.pause()
+		try { a.pause() } catch {}
 		teardownMse()
 	}, [ensureAudio, teardownMse])
 

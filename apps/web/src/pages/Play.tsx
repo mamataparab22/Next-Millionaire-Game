@@ -106,11 +106,8 @@ export function Play() {
       choices.map((c, i) => `${String.fromCharCode(65 + i)}. ${c}.`).join(' ')
     const run = async () => {
       try {
-        if (streamingSupported) {
-          await speakStream(intro, { voice })
-        } else {
-          await speak(intro, { voice })
-        }
+        // Use non-streaming by default for reliability between questions
+        await speak(intro, { voice })
       } catch {}
     }
     run()

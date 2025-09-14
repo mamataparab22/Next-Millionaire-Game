@@ -357,13 +357,16 @@ async def tts(req: TtsRequest):
                 "code": "TTS_NOT_CONFIGURED",
                 "message": "Azure OpenAI TTS requires TTS_API_VERSION (or LLM_API_VERSION).",
             })
-        # Azure audio.speech endpoint; model is the deployment name.
-        # Use Accept to choose mp3; omit unsupported fields.
-        url = f"{base_url}/openai/deployments/{model}/audio/speech?api-version={api_version}"
+        # Azure audio.speech endpoints. Prefer deployment-scoped; fallback to global if API expects explicit model.
+        # - Deployment endpoint: /openai/deployments/{deployment}/audio/speech
+        # - Global endpoint (requires body.model): /openai/audio/speech
+        url_deploy = f"{base_url}/openai/deployments/{model}/audio/speech?api-version={api_version}"
+        url_global = f"{base_url}/openai/audio/speech?api-version={api_version}"
+        url = url_deploy
         voice = (req.voice or "alloy")
         if voice.lower() == "nova":
             voice = "alloy"
-        payload: dict = {"input": req.input, "voice": voice, "format": "mp3"}
+        payload: dict = {"model": model, "input": req.input, "voice": voice, "format": "mp3"}
         headers = {"api-key": api_key, "Accept": "audio/mpeg"}
     else:
         # Legacy/other upstream server implementing /api/v1/speak/{model}
@@ -382,11 +385,28 @@ async def tts(req: TtsRequest):
             upstream = requests.post(url=url, json={**payload, "stream": True} if not is_azure else payload, headers=headers, stream=True, timeout=60)
             upstream.raise_for_status()
         except requests.RequestException as e:
-            # Retry Azure with wav if mp3 not accepted, then try without 'format'
+            # Retry Azure with more compatible options
             if is_azure and hasattr(e, "response") and e.response is not None and getattr(e.response, "status_code", None) == 400:
+                # If upstream complains about missing 'model', try the global endpoint which requires it
+                try_global_first = False
+                try:
+                    err_text = e.response.text or ""
+                    if ("Missing required parameter" in err_text) and ("model" in err_text):
+                        try_global_first = True
+                except Exception:
+                    pass
+                if try_global_first:
+                    try:
+                        upstream = requests.post(url=url_global, json=payload, headers=headers, stream=True, timeout=60)
+                        upstream.raise_for_status()
+                        media_type = upstream.headers.get("Content-Type", "audio/mpeg")
+                        return StreamingResponse(upstream.iter_content(chunk_size=65536), media_type=media_type or "audio/mpeg", background=BackgroundTask(upstream.close))
+                    except requests.RequestException:
+                        # continue with wav/no-format attempts on global endpoint
+                        url = url_global
                 try:
                     headers_wav = {**headers, "Accept": "audio/wav"}
-                    payload_wav = {**payload, "format": "wav"}
+                    payload_wav = {**payload, "format": "wav", "model": model}
                     upstream = requests.post(url=url, json=payload_wav, headers=headers_wav, stream=True, timeout=60)
                     upstream.raise_for_status()
                 except requests.RequestException as e2:
@@ -394,6 +414,7 @@ async def tts(req: TtsRequest):
                         try:
                             headers_any = {**headers, "Accept": "*/*"}
                             payload_nf = {k: v for k, v in payload.items() if k != "format"}
+                            payload_nf["model"] = model
                             upstream = requests.post(url=url, json=payload_nf, headers=headers_any, stream=True, timeout=60)
                             upstream.raise_for_status()
                         except requests.RequestException as e3:
@@ -433,9 +454,27 @@ async def tts(req: TtsRequest):
     except requests.RequestException as e:
         # Retry Azure with wav if mp3 not accepted; then try without 'format'
         if is_azure and hasattr(e, "response") and e.response is not None and getattr(e.response, "status_code", None) == 400:
+            # If missing model, first try the global endpoint
+            try_global_first = False
+            try:
+                err_text = e.response.text or ""
+                if ("Missing required parameter" in err_text) and ("model" in err_text):
+                    try_global_first = True
+            except Exception:
+                pass
+            if try_global_first:
+                try:
+                    # url_global is only defined for Azure branch; recompute here
+                    url_global = f"{base_url}/openai/audio/speech?api-version={api_version}"
+                    r = requests.post(url=url_global, json=payload, headers=headers, timeout=60)
+                    r.raise_for_status()
+                    content_type = r.headers.get("Content-Type", "audio/mpeg")
+                    return Response(content=r.content, media_type=content_type or "audio/mpeg")
+                except requests.RequestException:
+                    url = url_global
             try:
                 headers_wav = {**headers, "Accept": "audio/wav"}
-                payload_wav = {**payload, "format": "wav"}
+                payload_wav = {**payload, "format": "wav", "model": model}
                 r = requests.post(url=url, json=payload_wav, headers=headers_wav, timeout=60)
                 r.raise_for_status()
             except requests.RequestException as e2:
@@ -443,6 +482,7 @@ async def tts(req: TtsRequest):
                     try:
                         headers_any = {**headers, "Accept": "*/*"}
                         payload_nf = {k: v for k, v in payload.items() if k != "format"}
+                        payload_nf["model"] = model
                         r = requests.post(url=url, json=payload_nf, headers=headers_any, timeout=60)
                         r.raise_for_status()
                     except requests.RequestException as e3:
@@ -480,10 +520,13 @@ async def tts_debug():
     is_azure = "openai.azure.com" in (base_url.lower() if base_url else "")
     model = (env("TTS_MODEL") or TTS_MODEL_DEFAULT or "gpt-4o-mini-tts").strip()
     voice = ("alloy")
-    url = (
+    url_deploy = (
         f"{base_url}/openai/deployments/{model}/audio/speech?api-version={api_version}"
-        if is_azure and api_version
-        else f"{base_url}/api/v1/speak/{model}"
+        if is_azure and api_version else None
+    )
+    url_global = (
+        f"{base_url}/openai/audio/speech?api-version={api_version}"
+        if is_azure and api_version else None
     )
     masked_key = (api_key[:4] + "…" + api_key[-4:]) if api_key and len(api_key) > 8 else (api_key or "")
     return {
@@ -493,7 +536,8 @@ async def tts_debug():
         "deployment": model,
         "voice": voice,
         "accept": "audio/mpeg",
-        "url": url,
+        "url": url_deploy or url_global or (f"{base_url}/api/v1/speak/{model}" if not is_azure else ""),
+        "urls": {"deploy": url_deploy, "global": url_global},
         "apiKey": masked_key,
     }
 
