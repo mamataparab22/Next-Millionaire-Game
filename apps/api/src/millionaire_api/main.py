@@ -5,8 +5,9 @@ import logging
 from millionaire_api.llm import make_llm_client, LLMClient, LLMError
 from pydantic import BaseModel
 from millionaire_api.config import env, resolve_llm_settings  # loads .env on import
-from openai import OpenAI, AzureOpenAI
+from openai import AzureOpenAI
 from fastapi.responses import StreamingResponse
+from starlette.background import BackgroundTask
 import requests
 import json as _json
 import base64 as _b64
@@ -130,7 +131,7 @@ async def categories() -> CategoriesResponse:
 
 
 @app.post(
-    
+
     "/questions",
     response_model=QuestionsResponse,
     tags=["questions"],
@@ -210,25 +211,26 @@ async def get_questions(
 
 
 def _make_openai_client_for_general() -> tuple[object, str, bool]:
-    """Create an OpenAI or AzureOpenAI client for general chat/completions.
-    Returns (client, model, is_azure). Uses LLM_* envs.
+    """Create an AzureOpenAI client for general chat/completions.
+    Returns (client, model, is_azure=True). Uses LLM_* envs.
     """
-    provider = (LLM_PROVIDER or "openai").lower()
-    settings = resolve_llm_settings(provider)
+    settings = resolve_llm_settings("openai")
     api_key = settings.get("api_key", "")
-    if not api_key:
+    base_url = settings.get("base_url")
+    api_version = settings.get("api_version")
+    if not api_key or not base_url or not api_version:
         raise HTTPException(status_code=503, detail={
             "code": "LLM_NOT_CONFIGURED",
-            "message": "LLM is not configured. Set LLM_API_KEY and LLM_BASE_URL (and LLM_API_VERSION for Azure).",
+            "message": "Azure OpenAI is not configured. Set LLM_API_KEY, LLM_BASE_URL, and LLM_API_VERSION.",
         })
-    base_url = settings.get("base_url")
+    if isinstance(base_url, str) and "api.openai.com" in base_url.lower():
+        raise HTTPException(status_code=503, detail={
+            "code": "LLM_WRONG_ENDPOINT",
+            "message": "Configured endpoint is api.openai.com; expected Azure endpoint like https://<resource>.openai.azure.com.",
+        })
     model = str(settings.get("model") or "gpt-4o-mini")
-    api_version = settings.get("api_version")
-    if api_version:
-        client = AzureOpenAI(api_key=api_key, api_version=str(api_version), azure_endpoint=base_url)
-        return client, model, True
-    client = OpenAI(api_key=api_key, base_url=base_url)
-    return client, model, False
+    client = AzureOpenAI(api_key=api_key, api_version=str(api_version), azure_endpoint=base_url)
+    return client, model, True
 
 
 # ---------- Explanations ----------
@@ -301,24 +303,21 @@ class TtsRequest(BaseModel):
     model: Optional[str] = None
 
 
-def _tts_upstream_settings() -> tuple[str, str]:
+def _tts_upstream_settings() -> tuple[str, str, Optional[str]]:
     base_url = env("LLM_BASE_URL") or ""
     api_key = env("LLM_API_KEY") or ""
+    # Prefer TTS_API_VERSION if provided, otherwise fall back to LLM_API_VERSION
+    api_version = env("TTS_API_VERSION") or env("LLM_API_VERSION")
     if not base_url or not api_key:
         raise HTTPException(status_code=503, detail={
             "code": "TTS_NOT_CONFIGURED",
             "message": "Set LLM_BASE_URL and LLM_API_KEY (and TTS_MODEL).",
         })
-    return base_url.rstrip("/"), api_key
+    return base_url.rstrip("/"), api_key, (api_version or None)
 
 
-def _tts_stream_generator(url: str, payload: dict, headers: dict) -> Iterator[bytes]:
-    with requests.post(url=url, json=payload, headers=headers, stream=True, timeout=60) as resp:
-        try:
-            resp.raise_for_status()
-        except Exception as e:
-            # Yield nothing; FastAPI will convert to 500 if we raise inside generator
-            raise HTTPException(status_code=502, detail={"code": "TTS_UPSTREAM_ERROR", "message": str(e)})
+def _tts_stream_iter(resp: requests.Response) -> Iterator[bytes]:
+    try:
         for line in resp.iter_lines():
             if not line:
                 continue
@@ -334,12 +333,14 @@ def _tts_stream_generator(url: str, payload: dict, headers: dict) -> Iterator[by
                 try:
                     buf = _b64.b64decode(chunk)
                 except Exception:
-                    # If upstream changes format, skip invalid frames
                     continue
                 if buf:
                     yield buf
             elif t == "speech.audio.done":
                 break
+    except Exception:
+        # On streaming error, just stop iteration to close the connection gracefully
+        return
 
 
 @app.post("/tts", tags=["audio"], summary="Synthesize speech (mp3)")
@@ -347,28 +348,165 @@ async def tts(req: TtsRequest):
     if not req.input or not req.input.strip():
         raise HTTPException(status_code=400, detail={"code": "BAD_REQUEST", "message": "input is required"})
 
-    base_url, api_key = _tts_upstream_settings()
+    base_url, api_key, api_version = _tts_upstream_settings()
     model = (req.model or TTS_MODEL_DEFAULT or "gpt-4o-mini-tts").strip()
-    url = f"{base_url}/api/v1/speak/{model}"
-    payload: dict = {"input": req.input}
-    if req.voice:
-        payload["voice"] = req.voice
-    if req.speed is not None:
-        payload["speed"] = req.speed
-
-    headers = {"x-api-key": api_key}
+    is_azure = "openai.azure.com" in base_url.lower()
+    if is_azure:
+        if not api_version:
+            raise HTTPException(status_code=503, detail={
+                "code": "TTS_NOT_CONFIGURED",
+                "message": "Azure OpenAI TTS requires TTS_API_VERSION (or LLM_API_VERSION).",
+            })
+        # Azure audio.speech endpoint; model is the deployment name.
+        # Use Accept to choose mp3; omit unsupported fields.
+        url = f"{base_url}/openai/deployments/{model}/audio/speech?api-version={api_version}"
+        voice = (req.voice or "alloy")
+        if voice.lower() == "nova":
+            voice = "alloy"
+        payload: dict = {"input": req.input, "voice": voice, "format": "mp3"}
+        headers = {"api-key": api_key, "Accept": "audio/mpeg"}
+    else:
+        # Legacy/other upstream server implementing /api/v1/speak/{model}
+        url = f"{base_url}/api/v1/speak/{model}"
+        payload: dict = {"input": req.input}
+        if req.voice:
+            payload["voice"] = req.voice
+        if req.speed is not None:
+            payload["speed"] = req.speed
+        headers = {"x-api-key": api_key}
 
     # Streaming path
     if req.stream:
-        gen = _tts_stream_generator(url, {**payload, "stream": True}, headers)
-        return StreamingResponse(gen, media_type="audio/mpeg")
+        # Azure audio.speech: stream the binary audio body; legacy backends may emit JSON chunk events
+        try:
+            upstream = requests.post(url=url, json={**payload, "stream": True} if not is_azure else payload, headers=headers, stream=True, timeout=60)
+            upstream.raise_for_status()
+        except requests.RequestException as e:
+            # Retry Azure with wav if mp3 not accepted, then try without 'format'
+            if is_azure and hasattr(e, "response") and e.response is not None and getattr(e.response, "status_code", None) == 400:
+                try:
+                    headers_wav = {**headers, "Accept": "audio/wav"}
+                    payload_wav = {**payload, "format": "wav"}
+                    upstream = requests.post(url=url, json=payload_wav, headers=headers_wav, stream=True, timeout=60)
+                    upstream.raise_for_status()
+                except requests.RequestException as e2:
+                    if hasattr(e2, "response") and e2.response is not None and getattr(e2.response, "status_code", None) == 400:
+                        try:
+                            headers_any = {**headers, "Accept": "*/*"}
+                            payload_nf = {k: v for k, v in payload.items() if k != "format"}
+                            upstream = requests.post(url=url, json=payload_nf, headers=headers_any, stream=True, timeout=60)
+                            upstream.raise_for_status()
+                        except requests.RequestException as e3:
+                            msg = str(e3)
+                            try:
+                                if hasattr(e3, "response") and e3.response is not None:
+                                    msg = f"{e3} :: {e3.response.text}"
+                            except Exception:
+                                pass
+                            raise HTTPException(status_code=502, detail={"code": "TTS_UPSTREAM_ERROR", "message": msg})
+                    else:
+                        msg = str(e2)
+                        try:
+                            if hasattr(e2, "response") and e2.response is not None:
+                                msg = f"{e2} :: {e2.response.text}"
+                        except Exception:
+                            pass
+                        raise HTTPException(status_code=502, detail={"code": "TTS_UPSTREAM_ERROR", "message": msg})
+            else:
+                msg = str(e)
+                try:
+                    if hasattr(e, "response") and e.response is not None:
+                        msg = f"{e} :: {e.response.text}"
+                except Exception:
+                    pass
+                raise HTTPException(status_code=502, detail={"code": "TTS_UPSTREAM_ERROR", "message": msg})
+        if is_azure:
+            media_type = upstream.headers.get("Content-Type", "audio/mpeg")
+            return StreamingResponse(upstream.iter_content(chunk_size=65536), media_type=media_type or "audio/mpeg", background=BackgroundTask(upstream.close))
+        gen = _tts_stream_iter(upstream)
+        return StreamingResponse(gen, media_type="audio/mpeg", background=BackgroundTask(upstream.close))
 
     # Non-streaming path: return mp3 bytes
     try:
         r = requests.post(url=url, json=payload, headers=headers, timeout=60)
         r.raise_for_status()
     except requests.RequestException as e:
-        raise HTTPException(status_code=502, detail={"code": "TTS_UPSTREAM_ERROR", "message": str(e)})
+        # Retry Azure with wav if mp3 not accepted; then try without 'format'
+        if is_azure and hasattr(e, "response") and e.response is not None and getattr(e.response, "status_code", None) == 400:
+            try:
+                headers_wav = {**headers, "Accept": "audio/wav"}
+                payload_wav = {**payload, "format": "wav"}
+                r = requests.post(url=url, json=payload_wav, headers=headers_wav, timeout=60)
+                r.raise_for_status()
+            except requests.RequestException as e2:
+                if hasattr(e2, "response") and e2.response is not None and getattr(e2.response, "status_code", None) == 400:
+                    try:
+                        headers_any = {**headers, "Accept": "*/*"}
+                        payload_nf = {k: v for k, v in payload.items() if k != "format"}
+                        r = requests.post(url=url, json=payload_nf, headers=headers_any, timeout=60)
+                        r.raise_for_status()
+                    except requests.RequestException as e3:
+                        msg = str(e3)
+                        try:
+                            if hasattr(e3, "response") and e3.response is not None:
+                                msg = f"{e3} :: {e3.response.text}"
+                        except Exception:
+                            pass
+                        raise HTTPException(status_code=502, detail={"code": "TTS_UPSTREAM_ERROR", "message": msg})
+                else:
+                    msg = str(e2)
+                    try:
+                        if hasattr(e2, "response") and e2.response is not None:
+                            msg = f"{e2} :: {e2.response.text}"
+                    except Exception:
+                        pass
+                    raise HTTPException(status_code=502, detail={"code": "TTS_UPSTREAM_ERROR", "message": msg})
+        else:
+            msg = str(e)
+            try:
+                if hasattr(e, "response") and e.response is not None:
+                    msg = f"{e} :: {e.response.text}"
+            except Exception:
+                pass
+            raise HTTPException(status_code=502, detail={"code": "TTS_UPSTREAM_ERROR", "message": msg})
 
     content_type = r.headers.get("Content-Type", "audio/mpeg")
     return Response(content=r.content, media_type=content_type or "audio/mpeg")
+
+
+@app.get("/tts/debug", tags=["audio"], summary="Debug TTS configuration")
+async def tts_debug():
+    base_url, api_key, api_version = _tts_upstream_settings()
+    is_azure = "openai.azure.com" in (base_url.lower() if base_url else "")
+    model = (env("TTS_MODEL") or TTS_MODEL_DEFAULT or "gpt-4o-mini-tts").strip()
+    voice = ("alloy")
+    url = (
+        f"{base_url}/openai/deployments/{model}/audio/speech?api-version={api_version}"
+        if is_azure and api_version
+        else f"{base_url}/api/v1/speak/{model}"
+    )
+    masked_key = (api_key[:4] + "…" + api_key[-4:]) if api_key and len(api_key) > 8 else (api_key or "")
+    return {
+        "isAzure": is_azure,
+        "baseUrl": base_url,
+        "apiVersion": api_version,
+        "deployment": model,
+        "voice": voice,
+        "accept": "audio/mpeg",
+        "url": url,
+        "apiKey": masked_key,
+    }
+
+
+@app.get("/__routes", tags=["health"], summary="List registered routes")
+async def list_routes():
+    try:
+        paths = []
+        for r in app.router.routes:
+            try:
+                paths.append(getattr(r, "path", str(r)))
+            except Exception:
+                continue
+        return {"count": len(paths), "paths": sorted(paths)}
+    except Exception as e:
+        return {"error": str(e)}

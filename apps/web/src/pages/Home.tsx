@@ -54,7 +54,10 @@ export function Home() {
         setCategories(data.categories)
         setUsedFallback(false)
       })
-      .catch(() => {
+      .catch((err: unknown) => {
+        // Ignore aborts (React StrictMode mounts/unmounts effects in dev, causing a cancel)
+        const isAbort = err instanceof DOMException && err.name === 'AbortError'
+        if (isAbort) return
         setCategories(FALLBACK_CATEGORIES)
         setUsedFallback(true)
       })

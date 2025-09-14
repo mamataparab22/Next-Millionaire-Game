@@ -23,11 +23,13 @@ def make_llm_client(
     provider = (provider or "").strip().lower()
     if provider in ("", "none"):
         return None
-    if provider in ("openai", "gpt", "oai"):
+    if provider in ("openai", "gpt", "oai", "azure", "azure-openai", "azureopenai"):
         from .openai import OpenAIClient, HARDCODED_OPENAI_API_KEY
 
+        # Always resolve via the OpenAI path; resolve_llm_settings will include
+        # api_version when the base URL is an Azure endpoint (not api.openai.com).
         settings = resolve_llm_settings(
-            provider,
+            "openai",
             api_key=HARDCODED_OPENAI_API_KEY or llm_api_key,
             model=llm_model,
             base_url=llm_base_url,

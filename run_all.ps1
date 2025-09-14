@@ -39,6 +39,31 @@ if (Test-Path $ApiEnvPath) {
   Write-Info "API .env not found at $ApiEnvPath"
 }
 
+# Helper: aggressively kill processes listening on specific ports (fast shutdown)
+function Stop-Listeners {
+  param(
+    [int[]]$Ports
+  )
+  foreach ($port in $Ports) {
+    try {
+      $pids = Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty OwningProcess -Unique
+      if ($pids) {
+        foreach ($procId in $pids) {
+          try {
+            Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+            Write-Info ("Killed process {0} listening on :{1}" -f $procId, $port)
+          } catch {
+            Write-DebugLog 'stop' ("Failed to kill pid {0} on :{1}: {2}" -f $procId, $port, $_.Exception.Message)
+          }
+        }
+      }
+    } catch {
+      Write-DebugLog 'stop' ("Get-NetTCPConnection failed on :{0}: {1}" -f $port, $_.Exception.Message)
+    }
+  }
+}
+
 # Detect JS package manager
 $pm = $null
 if (Get-Command pnpm -ErrorAction SilentlyContinue) { $pm = 'pnpm' }
@@ -86,7 +111,10 @@ Write-Info "Starting API (FastAPI) on :$ApiPort"
 $apiJob = Start-Job -Name 'runall-api' -ScriptBlock {
   Param($ApiDir, $PythonExe, $Port)
   Set-Location $ApiDir
-  & $PythonExe -m uvicorn --app-dir src millionaire_api.main:app --host 0.0.0.0 --port $Port --reload --log-level debug
+  # Ensure src takes precedence for imports so latest code is used
+  $env:PYTHONPATH = Join-Path $ApiDir 'src'
+  $reloadDir = Join-Path $ApiDir 'src'
+  & $PythonExe -m uvicorn --app-dir src millionaire_api.main:app --host 0.0.0.0 --port $Port --reload --reload-dir $reloadDir --log-level debug
 } -ArgumentList $ApiDir, $ApiVenvPython, $ApiPort
 
 # Start web (Vite) in background job
@@ -184,14 +212,16 @@ finally {
   try { $global:runallPumpTimer.Stop() } catch {}
   try { Unregister-Event -SourceIdentifier 'runall-pump' -ErrorAction SilentlyContinue } catch {}
   try { $global:runallPumpTimer.Dispose() } catch {}
+  # Kill listeners first for fast teardown
+  Stop-Listeners -Ports @($WebPort, $ApiPort)
+  Start-Sleep -Milliseconds 200
+  # Then terminate background jobs forcefully if still around
   if ($webJob) {
-    Stop-Job -Job $webJob -ErrorAction SilentlyContinue
-    Receive-Job -Job $webJob -Keep -ErrorAction SilentlyContinue | Out-Host
-    Remove-Job -Job $webJob -ErrorAction SilentlyContinue
+    try { Stop-Job -Job $webJob -Force -ErrorAction SilentlyContinue } catch {}
+    try { Remove-Job -Job $webJob -Force -ErrorAction SilentlyContinue } catch {}
   }
   if ($apiJob) {
-    Stop-Job -Job $apiJob -ErrorAction SilentlyContinue
-    Receive-Job -Job $apiJob -Keep -ErrorAction SilentlyContinue | Out-Host
-    Remove-Job -Job $apiJob -ErrorAction SilentlyContinue
+    try { Stop-Job -Job $apiJob -Force -ErrorAction SilentlyContinue } catch {}
+    try { Remove-Job -Job $apiJob -Force -ErrorAction SilentlyContinue } catch {}
   }
 }

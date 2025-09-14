@@ -4,40 +4,34 @@ import json
 from typing import Any, Dict, List, Optional
 
 import asyncio
-from openai import OpenAI, AzureOpenAI
+from openai import AzureOpenAI
 
 from . import LLMClient, LLMError
 
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
-# Optional hardcoded key hook (not recommended for production; keep empty by default)
 HARDCODED_OPENAI_API_KEY: Optional[str] = None
 
 
 class OpenAIClient(LLMClient):
     def __init__(self, *, api_key: str, model: str = DEFAULT_OPENAI_MODEL, base_url: Optional[str] = None, api_version: Optional[str] = None):
-        # Expect generic LLM_* variables to be resolved by the factory and passed in
         endpoint = (base_url or "").strip()
         api_key_final = (api_key or "").strip()
-
-        if not endpoint or not api_key_final:
-            raise ValueError("OpenAI not configured: set LLM_BASE_URL and LLM_API_KEY")
-
-        # If api_version is provided, assume Azure OpenAI
-        if api_version:
-            self.client = AzureOpenAI(
-                api_key=api_key_final,
-                api_version=api_version,
-                azure_endpoint=endpoint,
-            )
-            # For Azure, 'model' is the deployment name
-            self.model = model
-        else:
-            # Standard OpenAI-compatible
-            self.client = OpenAI(
-                api_key=api_key_final,
-                base_url=endpoint,
-            )
-            self.model = model
+        if not endpoint:
+            raise ValueError("Azure OpenAI endpoint not configured: set LLM_BASE_URL")
+        if not api_key_final:
+            raise ValueError("Azure OpenAI API key not configured: set LLM_API_KEY")
+        if not api_version:
+            raise ValueError("Azure OpenAI API version not configured: set LLM_API_VERSION")
+        low = endpoint.lower()
+        if "api.openai.com" in low:
+            raise ValueError("Configured endpoint is api.openai.com; expected Azure OpenAI endpoint like https://<resource>.openai.azure.com")
+        self.client = AzureOpenAI(
+            api_key=api_key_final,
+            api_version=api_version,
+            azure_endpoint=endpoint,
+        )
+        # For Azure, 'model' is the deployment name
+        self.model = model
 
     async def generate(self, *, categories: List[str], difficulties: List[str]) -> List[Dict[str, Any]]:
         prompt = _build_prompt(categories, difficulties)
@@ -55,33 +49,6 @@ class OpenAIClient(LLMClient):
                 )
                 return (resp.choices[0].message.content or "")
             except Exception as e1:
-                msg = str(e1)
-                if "max_token" in msg or "max_completion_tokens" in msg:
-                    try:
-                        # Fallback to Responses API (omit any token limits)
-                        r2 = self.client.responses.create(
-                            model=self.model,
-                            input=[
-                                {"role": "system", "content": _SYSTEM_PROMPT},
-                                {"role": "user", "content": prompt},
-                            ],
-                            temperature=0.7,
-                            response_format={"type": "json_object"},
-                        )
-                        # openai>=1.40.0: output_text convenience
-                        text = getattr(r2, "output_text", None)
-                        if not text:
-                            # Fallback: try to reconstruct from content parts
-                            try:
-                                content = getattr(r2, "output", None) or getattr(r2, "content", None)
-                                text = "".join(
-                                    [getattr(b, "text", "") for b in (content or []) if getattr(b, "type", "text") == "output_text"]
-                                ) or ""
-                            except Exception:
-                                text = ""
-                        return text or ""
-                    except Exception:
-                        pass
                 raise
 
         attempts, delay = 0, 0.8
@@ -94,13 +61,13 @@ class OpenAIClient(LLMClient):
                 if any(code in msg for code in ["429", "500", "502", "503", "504"]):
                     attempts += 1
                     if attempts >= 3:
-                        raise LLMError(f"OpenAI error after retries: {msg}")
+                        raise LLMError(f"Azure OpenAI error after retries: {msg}")
                     await asyncio.sleep(delay)
                     delay *= 2
                     continue
-                raise LLMError(f"OpenAI error: {msg}")
+                raise LLMError(f"Azure OpenAI error: {msg}")
 
-        return _parse_questions(raw, provider_tag="openai", categories=categories, difficulties=difficulties)
+        return _parse_questions(raw, provider_tag="azure", categories=categories, difficulties=difficulties)
 
 
 _SYSTEM_PROMPT = (
@@ -143,7 +110,7 @@ def _parse_questions(raw_text: str, *, provider_tag: str, categories: List[str],
         if not isinstance(items, list):
             raise ValueError("questions array missing")
     except Exception as e:
-        raise LLMError(f"Failed to parse OpenAI JSON: {e} :: {raw_text[:500]}")
+        raise LLMError(f"Failed to parse Azure OpenAI JSON: {e} :: {raw_text[:500]}")
 
     out: List[Dict[str, Any]] = []
     for i, q in enumerate(items):
@@ -171,7 +138,7 @@ def _parse_questions(raw_text: str, *, provider_tag: str, categories: List[str],
             continue
 
     if not out:
-        raise LLMError("OpenAI returned no valid questions after parsing")
+        raise LLMError("Azure OpenAI returned no valid questions after parsing")
     # Trim or pad to requested size if needed
     want = len(difficulties)
     return out[:want]
