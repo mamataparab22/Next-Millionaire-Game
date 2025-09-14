@@ -65,8 +65,9 @@ def resolve_llm_settings(
             "model": (g_model or "gpt-4o-mini"),
             "base_url": g_base,
         }
-        # Only include api_version when explicitly set (Azure OpenAI)
-        if g_version:
+        # Include api_version only for Azure OpenAI endpoints
+        base = (g_base or "").lower()
+        if g_version and ("api.openai.com" not in base):
             out["api_version"] = g_version
         return out
 

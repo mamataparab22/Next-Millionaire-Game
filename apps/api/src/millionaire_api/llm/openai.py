@@ -43,19 +43,46 @@ class OpenAIClient(LLMClient):
         prompt = _build_prompt(categories, difficulties)
 
         def _call_sync() -> str:
-            resp = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.7,
-            )
             try:
-                return resp.choices[0].message.content or ""
-            except Exception as e:  # pragma: no cover
-                raise LLMError(f"OpenAI response parse error: {e}")
+                resp = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": _SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt},
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0.7,
+                )
+                return (resp.choices[0].message.content or "")
+            except Exception as e1:
+                msg = str(e1)
+                if "max_token" in msg or "max_completion_tokens" in msg:
+                    try:
+                        # Fallback to Responses API (omit any token limits)
+                        r2 = self.client.responses.create(
+                            model=self.model,
+                            input=[
+                                {"role": "system", "content": _SYSTEM_PROMPT},
+                                {"role": "user", "content": prompt},
+                            ],
+                            temperature=0.7,
+                            response_format={"type": "json_object"},
+                        )
+                        # openai>=1.40.0: output_text convenience
+                        text = getattr(r2, "output_text", None)
+                        if not text:
+                            # Fallback: try to reconstruct from content parts
+                            try:
+                                content = getattr(r2, "output", None) or getattr(r2, "content", None)
+                                text = "".join(
+                                    [getattr(b, "text", "") for b in (content or []) if getattr(b, "type", "text") == "output_text"]
+                                ) or ""
+                            except Exception:
+                                text = ""
+                        return text or ""
+                    except Exception:
+                        pass
+                raise
 
         attempts, delay = 0, 0.8
         while True:
