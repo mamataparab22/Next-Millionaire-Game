@@ -122,6 +122,7 @@ export function Home() {
               }
 
               try {
+                // TODO: use get_direct_questions to fetch questions directly from the LLM rather than the API
                 const base = import.meta.env.VITE_API_BASE as string | undefined
                 if (!base) {
                   throw new Error('API_UNAVAILABLE')

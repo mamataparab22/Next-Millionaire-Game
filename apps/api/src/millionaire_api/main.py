@@ -378,79 +378,10 @@ async def tts(req: TtsRequest):
             payload["speed"] = req.speed
         headers = {"x-api-key": api_key}
 
-    # Streaming path
-    if req.stream:
-        # Azure audio.speech: stream the binary audio body; legacy backends may emit JSON chunk events
-        try:
-            upstream = requests.post(url=url, json={**payload, "stream": True} if not is_azure else payload, headers=headers, stream=True, timeout=60)
-            upstream.raise_for_status()
-        except requests.RequestException as e:
-            # Retry Azure with more compatible options
-            if is_azure and hasattr(e, "response") and e.response is not None and getattr(e.response, "status_code", None) == 400:
-                # If upstream complains about missing 'model', try the global endpoint which requires it
-                try_global_first = False
-                try:
-                    err_text = e.response.text or ""
-                    if ("Missing required parameter" in err_text) and ("model" in err_text):
-                        try_global_first = True
-                except Exception:
-                    pass
-                if try_global_first:
-                    try:
-                        upstream = requests.post(url=url_global, json=payload, headers=headers, stream=True, timeout=60)
-                        upstream.raise_for_status()
-                        media_type = upstream.headers.get("Content-Type", "audio/mpeg")
-                        return StreamingResponse(upstream.iter_content(chunk_size=65536), media_type=media_type or "audio/mpeg", background=BackgroundTask(upstream.close))
-                    except requests.RequestException:
-                        # continue with wav/no-format attempts on global endpoint
-                        url = url_global
-                try:
-                    headers_wav = {**headers, "Accept": "audio/wav"}
-                    payload_wav = {**payload, "format": "wav", "model": model}
-                    upstream = requests.post(url=url, json=payload_wav, headers=headers_wav, stream=True, timeout=60)
-                    upstream.raise_for_status()
-                except requests.RequestException as e2:
-                    if hasattr(e2, "response") and e2.response is not None and getattr(e2.response, "status_code", None) == 400:
-                        try:
-                            headers_any = {**headers, "Accept": "*/*"}
-                            payload_nf = {k: v for k, v in payload.items() if k != "format"}
-                            payload_nf["model"] = model
-                            upstream = requests.post(url=url, json=payload_nf, headers=headers_any, stream=True, timeout=60)
-                            upstream.raise_for_status()
-                        except requests.RequestException as e3:
-                            msg = str(e3)
-                            try:
-                                if hasattr(e3, "response") and e3.response is not None:
-                                    msg = f"{e3} :: {e3.response.text}"
-                            except Exception:
-                                pass
-                            raise HTTPException(status_code=502, detail={"code": "TTS_UPSTREAM_ERROR", "message": msg})
-                    else:
-                        msg = str(e2)
-                        try:
-                            if hasattr(e2, "response") and e2.response is not None:
-                                msg = f"{e2} :: {e2.response.text}"
-                        except Exception:
-                            pass
-                        raise HTTPException(status_code=502, detail={"code": "TTS_UPSTREAM_ERROR", "message": msg})
-            else:
-                msg = str(e)
-                try:
-                    if hasattr(e, "response") and e.response is not None:
-                        msg = f"{e} :: {e.response.text}"
-                except Exception:
-                    pass
-                raise HTTPException(status_code=502, detail={"code": "TTS_UPSTREAM_ERROR", "message": msg})
-        if is_azure:
-            media_type = upstream.headers.get("Content-Type", "audio/mpeg")
-            return StreamingResponse(upstream.iter_content(chunk_size=65536), media_type=media_type or "audio/mpeg", background=BackgroundTask(upstream.close))
-        gen = _tts_stream_iter(upstream)
-        return StreamingResponse(gen, media_type="audio/mpeg", background=BackgroundTask(upstream.close))
-
     # Non-streaming path: return mp3 bytes
     try:
-        r = requests.post(url=url, json=payload, headers=headers, timeout=60)
-        r.raise_for_status()
+        audioResponse = requests.post(url=url, json=payload, headers=headers, timeout=60)
+        audioResponse.raise_for_status()
     except requests.RequestException as e:
         # Retry Azure with wav if mp3 not accepted; then try without 'format'
         if is_azure and hasattr(e, "response") and e.response is not None and getattr(e.response, "status_code", None) == 400:
@@ -466,25 +397,25 @@ async def tts(req: TtsRequest):
                 try:
                     # url_global is only defined for Azure branch; recompute here
                     url_global = f"{base_url}/openai/audio/speech?api-version={api_version}"
-                    r = requests.post(url=url_global, json=payload, headers=headers, timeout=60)
-                    r.raise_for_status()
-                    content_type = r.headers.get("Content-Type", "audio/mpeg")
-                    return Response(content=r.content, media_type=content_type or "audio/mpeg")
+                    audioResponse = requests.post(url=url_global, json=payload, headers=headers, timeout=60)
+                    audioResponse.raise_for_status()
+                    content_type = audioResponse.headers.get("Content-Type", "audio/mpeg")
+                    return Response(content=audioResponse.content, media_type=content_type or "audio/mpeg")
                 except requests.RequestException:
                     url = url_global
             try:
                 headers_wav = {**headers, "Accept": "audio/wav"}
                 payload_wav = {**payload, "format": "wav", "model": model}
-                r = requests.post(url=url, json=payload_wav, headers=headers_wav, timeout=60)
-                r.raise_for_status()
+                audioResponse = requests.post(url=url, json=payload_wav, headers=headers_wav, timeout=60)
+                audioResponse.raise_for_status()
             except requests.RequestException as e2:
                 if hasattr(e2, "response") and e2.response is not None and getattr(e2.response, "status_code", None) == 400:
                     try:
                         headers_any = {**headers, "Accept": "*/*"}
                         payload_nf = {k: v for k, v in payload.items() if k != "format"}
                         payload_nf["model"] = model
-                        r = requests.post(url=url, json=payload_nf, headers=headers_any, timeout=60)
-                        r.raise_for_status()
+                        audioResponse = requests.post(url=url, json=payload_nf, headers=headers_any, timeout=60)
+                        audioResponse.raise_for_status()
                     except requests.RequestException as e3:
                         msg = str(e3)
                         try:
@@ -510,8 +441,7 @@ async def tts(req: TtsRequest):
                 pass
             raise HTTPException(status_code=502, detail={"code": "TTS_UPSTREAM_ERROR", "message": msg})
 
-    content_type = r.headers.get("Content-Type", "audio/mpeg")
-    return Response(content=r.content, media_type=content_type or "audio/mpeg")
+    return Response(content=audioResponse.content, media_type="audio/mpeg")
 
 
 @app.get("/tts/debug", tags=["audio"], summary="Debug TTS configuration")

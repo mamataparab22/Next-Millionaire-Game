@@ -62,7 +62,12 @@ export function useTts(apiBase: string) {
 			const blob = await res.blob()
 			const url = URL.createObjectURL(blob)
 			a.src = url
-			await a.play()
+			await a.play().then(() => {
+                console.log('Audio playback started successfully.');
+            })
+            .catch(error => {
+                console.error('Audio playback failed:', error);
+            });
 		},
 		[apiBase, ensureAudio, teardownMse]
 	)

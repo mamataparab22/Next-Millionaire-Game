@@ -45,7 +45,7 @@ class OpenAIClient(LLMClient):
                         {"role": "user", "content": prompt},
                     ],
                     response_format={"type": "json_object"},
-                    temperature=0.7,
+                    temperature=1,
                 )
                 return (resp.choices[0].message.content or "")
             except Exception as e1:

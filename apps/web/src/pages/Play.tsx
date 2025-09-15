@@ -11,6 +11,7 @@ import { timeForLevel, prizeForLevel } from '../game/config'
 import { useNavigate } from 'react-router-dom'
 import useSfx from '../hooks/useSfx'
 import useTts from '../hooks/useTts'
+import { getTtsAudioGpt, getTtsAudioAmazonPolly } from '../hooks/useTtsDirect'
 
 export function Play() {
   const navigate = useNavigate()
@@ -107,8 +108,15 @@ export function Play() {
     const run = async () => {
       try {
         // Use non-streaming by default for reliability between questions
-        await speak(intro, { voice })
-      } catch {}
+        // await speak(intro, { voice })
+        // let audio = await getTtsAudioGpt(intro, voice)
+        let audio = await getTtsAudioAmazonPolly(intro, voice)
+        audio.play().catch((err) => {
+          console.error('Playback failed', err)
+        })
+      } catch(err) {
+        console.error('TTS failed, skipping narration', err)
+      }
     }
     run()
     return () => { stop() }
