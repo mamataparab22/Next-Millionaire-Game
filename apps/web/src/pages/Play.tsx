@@ -15,6 +15,7 @@ import { get_explanation } from '../hooks/useLlmDirect'
 
 export function Play() {
   const navigate = useNavigate()
+  const heroUrl = import.meta.env.BASE_URL + 'millionaire-hero.jpg'
   const [state, dispatch] = useReducer(reducer, initialState)
   const { enable, tick, correct, wrong, lifeline } = useSfx()
   const stop = () => {}
@@ -153,7 +154,7 @@ export function Play() {
   return (
     <main
       className="relative min-h-screen bg-center bg-cover"
-      style={{ backgroundImage: "url('/millionaire-hero.jpg')" }}
+      style={{ backgroundImage: `url('${heroUrl}')` }}
       aria-describedby={state.infoMessage ? 'info-message' : undefined}
     >
       {/* Dark overlay for readability */}

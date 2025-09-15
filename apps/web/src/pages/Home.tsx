@@ -23,6 +23,7 @@ const CATEGORIES = [
 
 export function Home() {
   const navigate = useNavigate()
+  const heroUrl = import.meta.env.BASE_URL + 'millionaire-hero.jpg'
   const [selected, setSelected] = useState<string[]>([])
   const [categories, setCategories] = useState<string[]>(CATEGORIES)
   const [loading, setLoading] = useState(false)
@@ -42,7 +43,7 @@ export function Home() {
   return (
     <main
       className="relative min-h-screen p-6 grid place-items-center bg-center bg-cover"
-      style={{ backgroundImage: "url('/millionaire-hero.jpg')" }}
+      style={{ backgroundImage: `url('${heroUrl}')` }}
       aria-busy={starting || undefined}
     >
       {/* Dark overlay to improve text contrast over the background image */}
