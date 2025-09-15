@@ -10,15 +10,13 @@ import { saveResults, saveSession, loadSession, clearSession } from '../game/sto
 import { timeForLevel, prizeForLevel } from '../game/config'
 import { useNavigate } from 'react-router-dom'
 import useSfx from '../hooks/useSfx'
-import useTts from '../hooks/useTts'
 import { getTtsAudioGpt, getTtsAudioAmazonPolly } from '../hooks/useTtsDirect'
 
 export function Play() {
   const navigate = useNavigate()
   const [state, dispatch] = useReducer(reducer, initialState)
   const { enable, tick, correct, wrong, lifeline } = useSfx()
-  const apiBase = import.meta.env.VITE_API_BASE ?? 'http://localhost:5177'
-  const { speak, speakStream, stop, streamingSupported } = useTts(apiBase)
+  const stop = () => {}
   const [narrationOn, setNarrationOn] = useState(true)
   const [voice, setVoice] = useState<string>('nova')
   const [showPoll, setShowPoll] = useState(false)
@@ -188,7 +186,7 @@ export function Play() {
               value={voice}
               onChange={(e) => setVoice(e.target.value)}
               aria-label="Select TTS voice"
-              title={streamingSupported ? 'Streaming enabled' : 'Streaming not supported'}
+              title={'TTS voice selection'}
             >
               <option value="nova">Nova</option>
               <option value="alloy">Alloy</option>

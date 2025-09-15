@@ -1,5 +1,5 @@
 Param(
-  [int]$WebPort = 5173,
+  [int]$WebPort = 5173
 )
 
 $ErrorActionPreference = 'Stop'
@@ -52,37 +52,23 @@ Push-Location $Root
 if ($pm -eq 'pnpm') { pnpm install | Out-Host } else { npm install | Out-Host }
 Pop-Location
 
-# Ensure Python is available
-if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
-  Write-Err "Python 3.10+ is required but not found in PATH. Install Python and retry."
-  exit 1
-}
-
-
-
 # Start web (Vite) in background job
-Write-Info "Starting web (Vite) on :$WebPort with VITE_API_BASE=$ViteApiBase using $pm"
+Write-Info "Starting web (Vite) on :$WebPort using $pm"
 $webJob = Start-Job -Name 'runall-web' -ScriptBlock {
-  Param($WebDir, $Pm, $ApiBase, $Port)
+  Param($WebDir, $Pm, $Port)
   $ErrorActionPreference = 'Stop'
-  $env:VITE_API_BASE = $ApiBase
   Set-Location $WebDir
   if ($Pm -eq 'pnpm') {
     pnpm run dev -- --port $Port --strictPort
   } else {
     npm run dev -- --port $Port --strictPort
   }
-} -ArgumentList $WebDir, $pm, $ViteApiBase, $WebPort
+} -ArgumentList $WebDir, $pm, $WebPort
 
-Write-Info ("API Job Id: {0}; Web Job Id: {1}" -f $apiJob.Id, $webJob.Id)
+Write-Info ("Web Job Id: {0}" -f $webJob.Id)
 
-# Early failure detection: if a job exits immediately, surface its output
+# Early failure detection: if the job exits immediately, surface its output
 Start-Sleep -Milliseconds 800
-$apiState = (Get-Job -Id $apiJob.Id).State
-if ($apiState -ne 'Running') {
-  Write-Err "API job exited early with state: $apiState"
-  Receive-Job -Job $apiJob -Keep -ErrorAction SilentlyContinue | Out-Host
-}
 $webState = (Get-Job -Id $webJob.Id).State
 if ($webState -ne 'Running') {
   Write-Err "Web job exited early with state: $webState"
@@ -93,10 +79,6 @@ if ($webState -ne 'Running') {
 $global:runallPumpTimer = New-Object Timers.Timer
 $global:runallPumpTimer.Interval = 300
 $null = Register-ObjectEvent -InputObject $global:runallPumpTimer -EventName Elapsed -SourceIdentifier "runall-pump" -Action {
-  try {
-    $outA = Receive-Job -Name 'runall-api' -Keep -ErrorAction SilentlyContinue
-    if ($outA) { $outA | ForEach-Object { Write-DebugLog 'api' $_ } }
-  } catch {}
   try {
     $outW = Receive-Job -Name 'runall-web' -Keep -ErrorAction SilentlyContinue
     if ($outW) { $outW | ForEach-Object { Write-DebugLog 'web' $_ } }
@@ -127,10 +109,6 @@ function Wait-Url {
   Write-Err "$Name did not become ready: $Url (timeout ${TimeoutSec}s)"
   # Dump last lines from job logs for context
   try {
-    if ($Name -eq 'API') {
-      $apiDump = Receive-Job -Name 'runall-api' -Keep -ErrorAction SilentlyContinue | Select-Object -Last 80
-      if ($apiDump) { Write-Host "[api][recent]" -ForegroundColor DarkGray; $apiDump | Out-Host }
-    }
     if ($Name -eq 'Web') {
       $webDump = Receive-Job -Name 'runall-web' -Keep -ErrorAction SilentlyContinue | Select-Object -Last 80
       if ($webDump) { Write-Host "[web][recent]" -ForegroundColor DarkGray; $webDump | Out-Host }
@@ -140,11 +118,9 @@ function Wait-Url {
 }
 
 Write-Info "Waiting for services to be ready..."
-[void](Wait-Url -Url ("http://localhost:{0}/health" -f $ApiPort) -Name 'API')
 [void](Wait-Url -Url ("http://localhost:{0}/" -f $WebPort) -Name 'Web')
 
 Write-Info ("Open Web: http://localhost:{0}/" -f $WebPort)
-Write-Info ("API Health: http://localhost:{0}/health" -f $ApiPort)
 
 try {
   Write-Info "Press Enter to stop both services..."
@@ -156,15 +132,11 @@ finally {
   try { Unregister-Event -SourceIdentifier 'runall-pump' -ErrorAction SilentlyContinue } catch {}
   try { $global:runallPumpTimer.Dispose() } catch {}
   # Kill listeners first for fast teardown
-  Stop-Listeners -Ports @($WebPort, $ApiPort)
+  Stop-Listeners -Ports @($WebPort)
   Start-Sleep -Milliseconds 200
   # Then terminate background jobs forcefully if still around
   if ($webJob) {
     try { Stop-Job -Job $webJob -Force -ErrorAction SilentlyContinue } catch {}
     try { Remove-Job -Job $webJob -Force -ErrorAction SilentlyContinue } catch {}
-  }
-  if ($apiJob) {
-    try { Stop-Job -Job $apiJob -Force -ErrorAction SilentlyContinue } catch {}
-    try { Remove-Job -Job $apiJob -Force -ErrorAction SilentlyContinue } catch {}
   }
 }
