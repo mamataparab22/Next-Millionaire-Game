@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { clearSession, saveSession } from '../game/storage'
 import { initialState } from '../game/reducer'
 import { LoadingQuestions } from '../components/LoadingQuestions'
+import { get_direct_questions } from '../hooks/useLlmDirect'
 
 const FALLBACK_CATEGORIES = [
   'General Knowledge',
@@ -122,30 +123,7 @@ export function Home() {
               }
 
               try {
-                // TODO: use get_direct_questions to fetch questions directly from the LLM rather than the API
-                const base = import.meta.env.VITE_API_BASE as string | undefined
-                if (!base) {
-                  throw new Error('API_UNAVAILABLE')
-                }
-                const r = await fetch(`${base}/questions`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ categories: selected, count: 15 }),
-                })
-                if (!r.ok) {
-                  let code = 'UNKNOWN'
-                  try {
-                    const data = await r.json()
-                    code = data?.detail?.code || code
-                  } catch {}
-                  if (code === 'LLM_NOT_CONFIGURED') {
-                    throw new Error('LLM is not configured. Please set LLM_* variables in the API and try again.')
-                  }
-                  throw new Error('Failed to generate questions. Please try again.')
-                }
-                const data = await r.json()
-                const qs = Array.isArray(data?.questions) && data.questions.length > 0 ? data.questions : []
-                if (qs.length === 0) throw new Error('No questions returned by LLM. Please try again.')
+                const qs = await get_direct_questions(selected)
                 proceed(qs)
               } catch (e: any) {
                 setStartError(e?.message || 'Failed to start game.')
