@@ -17,7 +17,7 @@ export function Play() {
   const navigate = useNavigate()
   const heroUrl = import.meta.env.BASE_URL + 'millionaire-hero.jpg'
   const [state, dispatch] = useReducer(reducer, initialState)
-  const { enable, tick, correct, wrong, lifeline, applause, popperNormal, popperBig } = useSfx()
+  const { enable, tick, correct, wrong, lifeline, applause, popperNormal, popperBig, applauseSample, startTimerLoop, stopTimerLoop } = useSfx()
   const stop = () => {}
   const [narrationOn, setNarrationOn] = useState(true)
   const [voice, setVoice] = useState<string>('nova')
@@ -52,9 +52,13 @@ export function Play() {
   useEffect(() => {
     if (state.answered || state.gameOver) return
     if (state.remainingTime <= 0) return
+    // start timer loop SFX when a question is active and in first 10
+    if (state.currentQuestionIndex < 10) {
+      startTimerLoop().catch(() => {})
+    }
     const id = setInterval(() => dispatch({ type: 'TICK' }), 1000)
     return () => clearInterval(id)
-  }, [state.answered, state.gameOver, state.remainingTime])
+  }, [state.answered, state.gameOver, state.remainingTime, state.currentQuestionIndex, startTimerLoop])
 
   // Play tick when the timer decreases (only for first 10 questions)
   useEffect(() => {
@@ -74,6 +78,13 @@ export function Play() {
     }
   }, [state.remainingTime, state.answered])
 
+  // Stop timer loop SFX when question is answered or game ends
+  useEffect(() => {
+    if (state.answered || state.gameOver || state.currentQuestionIndex >= 10 || state.remainingTime <= 0) {
+      stopTimerLoop().catch(() => {})
+    }
+  }, [state.answered, state.gameOver, state.currentQuestionIndex, state.remainingTime, stopTimerLoop])
+
   // Pulse ladder on correct answer
   useEffect(() => {
     if (state.answered && state.correct) {
@@ -91,9 +102,10 @@ export function Play() {
         // Ensure audio context is active, then play correct tone and applause first
         await enable()
         await correct()
-        await applause()
-        // Popper on every correct; bigger on milestones
+        // Use provided WAVs for clapping; milestone uses bigger sample
         const isMilestone = state.level === 5 || state.level === 10
+        await applauseSample({ milestone: isMilestone })
+        // Popper on every correct; bigger on milestones
         if (isMilestone) {
           await popperBig()
           setConfettiPieces(180)
