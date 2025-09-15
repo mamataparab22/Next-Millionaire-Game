@@ -14,8 +14,8 @@ export function useSfx() {
   const timerGainRef = useRef<GainNode | null>(null)
 
   const SFX_CFG = {
-    clapMs: 1300,
-    clapMilestoneMs: 2200,
+    clapMs: 1700,
+    clapMilestoneMs: 2700,
     clapGain: 0.95,
     clapFadeInMs: 12,
     clapFadeOutMs: 120,
