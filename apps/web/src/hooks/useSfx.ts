@@ -85,6 +85,54 @@ export function useSfx() {
     [ensureCtx]
   )
 
+  const playNoise = useCallback(
+    async (
+      durationMs: number,
+      opts?: { gain?: number; filter?: { type: BiquadFilterType; frequency: number; Q?: number }; attackMs?: number; releaseMs?: number; offsetMs?: number }
+    ) => {
+      const ctx = await ensureCtx()
+      const master = masterRef.current!
+      const sampleRate = ctx.sampleRate
+      const frameCount = Math.max(1, Math.floor((durationMs / 1000) * sampleRate))
+      const buffer = ctx.createBuffer(1, frameCount, sampleRate)
+      const data = buffer.getChannelData(0)
+      for (let i = 0; i < frameCount; i++) {
+        data[i] = (Math.random() * 2 - 1) * 0.8
+      }
+
+      const src = ctx.createBufferSource()
+      src.buffer = buffer
+
+      const gain = ctx.createGain()
+      gain.gain.value = 0
+
+      let node: AudioNode = src
+      if (opts?.filter) {
+        const biq = ctx.createBiquadFilter()
+        biq.type = opts.filter.type
+        biq.frequency.value = opts.filter.frequency
+        if (opts.filter.Q) biq.Q.value = opts.filter.Q
+        node.connect(biq)
+        biq.connect(gain)
+      } else {
+        node.connect(gain)
+      }
+      gain.connect(master)
+
+      const t0 = now(ctx) + (opts?.offsetMs ? opts.offsetMs / 1000 : 0)
+      const attack = (opts?.attackMs ?? 12) / 1000
+      const release = (opts?.releaseMs ?? 120) / 1000
+      const g = opts?.gain ?? 0.25
+      gain.gain.setValueAtTime(0, t0)
+      gain.gain.linearRampToValueAtTime(g, t0 + attack)
+      gain.gain.setTargetAtTime(0.0001, t0 + durationMs / 1000, release)
+
+      src.start(t0)
+      src.stop(t0 + durationMs / 1000 + release + 0.02)
+    },
+    [ensureCtx]
+  )
+
   const tick = useCallback(async () => {
     // short tick
     await playTone(880, 80, { type: 'square', gain: 0.18, attackMs: 4, releaseMs: 50 })
@@ -108,11 +156,36 @@ export function useSfx() {
     await playSweep(300, 900, 260, { type: 'sawtooth', gain: 0.12 })
   }, [playSweep])
 
+  const applause = useCallback(async () => {
+    // Schedule a cluster of short clap-like noise bursts
+    const bursts = 12
+    for (let i = 0; i < bursts; i++) {
+      const offset = Math.random() * 900 // ms
+      const freq = 1600 + Math.random() * 800
+      playNoise(110 + Math.random() * 70, {
+        gain: 0.14 + Math.random() * 0.08,
+        filter: { type: 'bandpass', frequency: freq, Q: 0.9 },
+        attackMs: 8,
+        releaseMs: 100,
+        offsetMs: offset,
+      })
+    }
+    // gentle tail
+    await playNoise(220, { gain: 0.06, filter: { type: 'lowpass', frequency: 1200, Q: 0.7 }, offsetMs: 960 })
+  }, [playNoise])
+
+  const popper = useCallback(async () => {
+    // Popper: quick pop + sparkle sweep + confetti noise
+    await playTone(220, 60, { type: 'square', gain: 0.22, attackMs: 2, releaseMs: 60 })
+    await playSweep(500, 1600, 180, { type: 'triangle', gain: 0.18 })
+    await playNoise(260, { gain: 0.18, filter: { type: 'highpass', frequency: 900, Q: 0.8 }, attackMs: 4, releaseMs: 160 })
+  }, [playTone, playSweep, playNoise])
+
   const enable = useCallback(async () => {
     await ensureCtx()
   }, [ensureCtx])
 
-  return { enable, tick, correct, wrong, lifeline }
+  return { enable, tick, correct, wrong, lifeline, applause, popper }
 }
 
 export default useSfx

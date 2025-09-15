@@ -17,13 +17,14 @@ export function Play() {
   const navigate = useNavigate()
   const heroUrl = import.meta.env.BASE_URL + 'millionaire-hero.jpg'
   const [state, dispatch] = useReducer(reducer, initialState)
-  const { enable, tick, correct, wrong, lifeline } = useSfx()
+  const { enable, tick, correct, wrong, lifeline, applause, popper } = useSfx()
   const stop = () => {}
   const [narrationOn, setNarrationOn] = useState(true)
   const [voice, setVoice] = useState<string>('nova')
   const [showPoll, setShowPoll] = useState(false)
   const [animatePoll, setAnimatePoll] = useState(false)
   const [pulseLevel, setPulseLevel] = useState<number | undefined>(undefined)
+  const [showConfetti, setShowConfetti] = useState(false)
   const [loadingQs, setLoadingQs] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [showResults, setShowResults] = useState(false)
@@ -84,8 +85,19 @@ export function Play() {
   // Play correct/wrong once when answered
   useEffect(() => {
     if (!state.answered || state.correct == null) return
-    if (state.correct) correct()
-    else wrong()
+    if (state.correct) {
+      correct()
+      // Applause on every correct answer
+      applause()
+      // Milestones at 5th and 10th correct answers: trigger popper and confetti
+      if (state.level === 5 || state.level === 10) {
+        popper()
+        setShowConfetti(true)
+        setTimeout(() => setShowConfetti(false), 1600)
+      }
+    } else {
+      wrong()
+    }
     // Narrate correctness and brief explanation
     const run = async () => {
       try {
@@ -160,7 +172,7 @@ export function Play() {
       {/* Dark overlay for readability */}
       <div aria-hidden className="pointer-events-none absolute inset-0 z-0 bg-black/60" />
   <div className="relative z-10 grid gap-4 md:grid-cols-[1fr_220px] pl-40">
-  {pulseLevel && <ConfettiBurst pieces={90} />}
+  {showConfetti && <ConfettiBurst pieces={120} />}
   {loadingQs && state.questions.length === 0 && (
           <div className="col-span-full">
             <LoadingQuestions />
