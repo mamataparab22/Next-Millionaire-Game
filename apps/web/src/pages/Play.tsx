@@ -10,6 +10,7 @@ import { saveResults, saveSession, loadSession, clearSession } from '../game/sto
 import { timeForLevel, prizeForLevel } from '../game/config'
 import { useNavigate } from 'react-router-dom'
 import useSfx from '../hooks/useSfx'
+import useTts from '../hooks/useTts'
 import { useState as useReactState } from 'react'
 // TTS imports are retained only for question intro narration; not used on answer reveal
 import { getTtsAudioGpt, getTtsAudioAmazonPolly } from '../hooks/useTtsDirect'
@@ -19,9 +20,10 @@ export function Play() {
   const heroUrl = import.meta.env.BASE_URL + 'millionaire-hero.jpg'
   const [state, dispatch] = useReducer(reducer, initialState)
   const { enable, tick, wrong, lifeline, applauseSample } = useSfx()
-  const stop = () => {}
+  const { speak, stop } = useTts()
   const [narrationOn, setNarrationOn] = useState(true)
   const [voice, setVoice] = useState<string>('nova')
+  const narrationAudioRef = useRef<HTMLAudioElement | null>(null)
   const [showPoll, setShowPoll] = useState(false)
   const [animatePoll, setAnimatePoll] = useState(false)
   const [pulseLevel, setPulseLevel] = useState<number | undefined>(undefined)
@@ -127,19 +129,32 @@ export function Play() {
       choices.map((c, i) => `${String.fromCharCode(65 + i)}. ${c}.`).join(' ')
     const run = async () => {
       try {
-        // Use non-streaming by default for reliability between questions
-        // await speak(intro, { voice })
-        // let audio = await getTtsAudioGpt(intro, voice)
-        let audio = await getTtsAudioAmazonPolly(intro, voice)
-        audio.play().catch((err) => {
-          console.error('Playback failed', err)
-        })
+        // Prefer GPT TTS for OpenAI voices, else use Polly. Fallback to SpeechSynthesis on failure.
+        const openAiVoices = ['nova', 'alloy', 'shimmer']
+        let audio: HTMLAudioElement | null = null
+        try {
+          if (openAiVoices.includes(voice.toLowerCase())) {
+            audio = await getTtsAudioGpt(intro, voice)
+          } else {
+            audio = await getTtsAudioAmazonPolly(intro, voice)
+          }
+          // Stop any previous narration
+          try { narrationAudioRef.current?.pause() } catch {}
+          narrationAudioRef.current = audio
+          await audio.play()
+        } catch (playErr) {
+          // Browser blocked autoplay or remote TTS failed — use SpeechSynthesis fallback
+          await speak(intro, { voice })
+        }
       } catch(err) {
         console.error('TTS failed, skipping narration', err)
       }
     }
     run()
-    return () => { stop() }
+    return () => {
+      try { narrationAudioRef.current?.pause() } catch {}
+      stop()
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q?.id, narrationOn, voice])
 
