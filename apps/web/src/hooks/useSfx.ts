@@ -10,8 +10,6 @@ export function useSfx() {
   const ctxRef = useRef<AudioContext | null>(null)
   const masterRef = useRef<GainNode | null>(null)
   const sampleCacheRef = useRef<Map<string, AudioBuffer>>(new Map())
-  const timerNodeRef = useRef<AudioBufferSourceNode | null>(null)
-  const timerGainRef = useRef<GainNode | null>(null)
 
   const SFX_CFG = {
     clapMs: 1700,
@@ -19,11 +17,6 @@ export function useSfx() {
     clapGain: 1.0,
     clapFadeInMs: 12,
     clapFadeOutMs: 120,
-    timerGain: 0.38,
-    timerFadeInMs: 80,
-    timerFadeOutMs: 80,
-    timerLoopStart: 0.02,
-    timerLoopEnd: 0.86,
   } as const
 
   const ensureCtx = useCallback(async () => {
@@ -44,16 +37,11 @@ export function useSfx() {
   const baseUrl = (import.meta as any).env?.BASE_URL || '/'
 
   const loadSample = useCallback(
-    async (name: 'clap' | 'clapMilestone' | 'timer'): Promise<AudioBuffer> => {
+    async (name: 'clap'): Promise<AudioBuffer> => {
       const key = `sfx:${name}`
       const cache = sampleCacheRef.current
       if (cache.has(key)) return cache.get(key)!
-      const file =
-        name === 'clap'
-          ? 'clapping.wav'
-          : name === 'clapMilestone'
-          ? 'milestone_clapping.wav'
-          : 'Timer.wav'
+      const file = 'clapping.wav'
       const url = `${baseUrl}${file}`
       const res = await fetch(url)
       if (!res.ok) {
@@ -324,10 +312,10 @@ export function useSfx() {
     await playNoise(320, { gain: 0.24, filter: { type: 'highpass', frequency: 900, Q: 0.9 }, attackMs: 4, releaseMs: 180 })
   }, [popperNormal, playTone, playSweep, playNoise])
 
-  const applauseSample = useCallback(async (opts?: { milestone?: boolean }) => {
+  const applauseSample = useCallback(async () => {
     try {
-      const buf = await loadSample(opts?.milestone ? 'clapMilestone' : 'clap')
-      const maxMs = opts?.milestone ? SFX_CFG.clapMilestoneMs : SFX_CFG.clapMs
+      const buf = await loadSample('clap')
+      const maxMs = SFX_CFG.clapMs
       await playSample(buf, {
         startSec: 0,
         durationMs: maxMs,
@@ -341,48 +329,6 @@ export function useSfx() {
     }
   }, [loadSample, playSample, applause])
 
-  const startTimerLoop = useCallback(async () => {
-    if (timerNodeRef.current) return
-    const ctx = await ensureCtx()
-    const buf = await loadSample('timer')
-    const src = ctx.createBufferSource()
-    src.buffer = buf
-    src.loop = true
-    // loop the meat of the Timer.wav to avoid clicks
-    src.loopStart = Math.min(Math.max(0, SFX_CFG.timerLoopStart), Math.max(0, buf.duration - 0.05))
-    src.loopEnd = Math.min(Math.max(src.loopStart + 0.05, SFX_CFG.timerLoopEnd), buf.duration)
-    const gain = ctx.createGain()
-    gain.gain.value = 0.0001
-    src.connect(gain)
-    gain.connect(masterRef.current!)
-    const t0 = now(ctx)
-    src.start(t0)
-    // fade in
-    try {
-      gain.gain.linearRampToValueAtTime(SFX_CFG.timerGain, t0 + Math.max(0.02, SFX_CFG.timerFadeInMs / 1000))
-    } catch {}
-    timerNodeRef.current = src
-    timerGainRef.current = gain
-  }, [ensureCtx, loadSample])
-
-  const stopTimerLoop = useCallback(async () => {
-    if (!timerNodeRef.current) return
-    try {
-      const ctx = await ensureCtx()
-      const t = now(ctx)
-      // quick fade out
-      const g = timerGainRef.current
-      if (g) {
-        try {
-          const tau = Math.max(0.02, SFX_CFG.timerFadeOutMs / 1000) / 3
-          g.gain.setTargetAtTime(0.0001, t, tau)
-        } catch {}
-      }
-      timerNodeRef.current.stop(t + 0.08)
-    } catch {}
-    timerNodeRef.current = null
-    timerGainRef.current = null
-  }, [ensureCtx])
 
   const enable = useCallback(async () => {
     await ensureCtx()
@@ -398,8 +344,6 @@ export function useSfx() {
     popperNormal,
     popperBig,
     applauseSample,
-    startTimerLoop,
-    stopTimerLoop,
   }
 }
 

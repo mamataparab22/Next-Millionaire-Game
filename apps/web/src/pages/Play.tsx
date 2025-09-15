@@ -10,6 +10,7 @@ import { saveResults, saveSession, loadSession, clearSession } from '../game/sto
 import { timeForLevel, prizeForLevel } from '../game/config'
 import { useNavigate } from 'react-router-dom'
 import useSfx from '../hooks/useSfx'
+import { useState as useReactState } from 'react'
 // TTS imports are retained only for question intro narration; not used on answer reveal
 import { getTtsAudioGpt, getTtsAudioAmazonPolly } from '../hooks/useTtsDirect'
 
@@ -26,6 +27,7 @@ export function Play() {
   const [pulseLevel, setPulseLevel] = useState<number | undefined>(undefined)
   const [showConfetti, setShowConfetti] = useState(false)
   const [confettiPieces, setConfettiPieces] = useState(120)
+  const [showFireworks, setShowFireworks] = useState(false)
   const [loadingQs, setLoadingQs] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [showResults, setShowResults] = useState(false)
@@ -93,9 +95,13 @@ export function Play() {
         // Ensure audio context is active, then play only clapping (no beeps/poppers)
         await enable()
         const isMilestone = state.level === 5 || state.level === 10
-        await applauseSample({ milestone: isMilestone })
+        await applauseSample()
         setConfettiPieces(isMilestone ? 180 : 110)
         setShowConfetti(true)
+        if (isMilestone) {
+          setShowFireworks(true)
+          setTimeout(() => setShowFireworks(false), 1800)
+        }
         setTimeout(() => setShowConfetti(false), 1600)
       })()
     } else {
@@ -160,6 +166,15 @@ export function Play() {
       <div aria-hidden className="pointer-events-none absolute inset-0 z-0 bg-black/60" />
   <div className="relative z-10 grid gap-4 md:grid-cols-[1fr_220px] pl-40">
   {showConfetti && <ConfettiBurst pieces={confettiPieces} />}
+  {showFireworks && (
+    <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center">
+      <lottie-player
+        autoplay
+        src={import.meta.env.BASE_URL + 'Fireworks.json'}
+        style={{ width: '70vw', height: '70vh' }}
+      />
+    </div>
+  )}
   {loadingQs && state.questions.length === 0 && (
           <div className="col-span-full">
             <LoadingQuestions />
