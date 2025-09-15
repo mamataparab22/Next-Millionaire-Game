@@ -92,4 +92,55 @@ function parseQuestionsJson(raw: string): any[] {
   throw new Error('Invalid LLM JSON');
 }
 
+export async function get_explanation(
+  prompt: string,
+  choices: string[],
+  correctIndex: number,
+  userIndex?: number,
+  style: string = 'concise'
+): Promise<string> {
+  if (!prompt || !Array.isArray(choices) || choices.length < 2) {
+    throw new Error('prompt and >=2 choices required')
+  }
+  const system =
+    'You are a helpful quiz host. In 1–2 short sentences, explain why the correct answer is right. ' +
+    'Avoid spoilers for future questions, keep it upbeat and concise.'
+  const parts: string[] = []
+  parts.push(`Question: ${prompt}`)
+  parts.push('Choices:')
+  for (let i = 0; i < choices.length; i++) {
+    const letter = String.fromCharCode(65 + i)
+    parts.push(`${letter}) ${choices[i]}`)
+  }
+  parts.push(`Correct index: ${correctIndex}`)
+  if (typeof userIndex === 'number' && Number.isFinite(userIndex)) {
+    parts.push(`User chose index: ${userIndex}`)
+  }
+  parts.push(`Style: ${style}`)
+  const user_msg = parts.join('\n')
+
+  const url = `${BASE_URL.replace(/\/$/, '')}/openai/deployments/${DEPLOYMENT}/chat/completions?api-version=${encodeURIComponent(CHAT_API_VERSION)}`
+  const body = {
+    model: DEPLOYMENT,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: user_msg },
+    ],
+    temperature: 0.6,
+  } as const
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'api-key': ILIAD_API_KEY,
+  }
+  const resp = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
+  if (!resp.ok) {
+    const txt = await resp.text().catch(() => '')
+    throw new Error(`LLM error: ${resp.status} ${txt}`)
+  }
+  const data = await resp.json()
+  const text = String(data?.choices?.[0]?.message?.content ?? '').trim()
+  if (!text) throw new Error('Empty explanation')
+  return text
+}
+
 // Example: get_direct_questions(["Science", "History"]);

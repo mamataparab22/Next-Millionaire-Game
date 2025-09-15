@@ -11,6 +11,7 @@ import { timeForLevel, prizeForLevel } from '../game/config'
 import { useNavigate } from 'react-router-dom'
 import useSfx from '../hooks/useSfx'
 import { getTtsAudioGpt, getTtsAudioAmazonPolly } from '../hooks/useTtsDirect'
+import { get_explanation } from '../hooks/useLlmDirect'
 
 export function Play() {
   const navigate = useNavigate()
@@ -85,6 +86,21 @@ export function Play() {
     if (state.correct) correct()
     else wrong()
     // Narrate correctness and brief explanation
+    const run = async () => {
+      try {
+        const qNow = getCurrentQuestion(state)
+        if (!qNow) return
+        const explanation = await get_explanation(qNow.prompt, qNow.choices, qNow.correctIndex, state.lockedChoice ?? undefined, 'concise')
+        const prelude = state.correct ? 'Correct. ' : 'Incorrect. '
+        const text = `${prelude}${explanation}`
+        // let audio = await getTtsAudioGpt(text, voice)
+        let audio = await getTtsAudioAmazonPolly(text, voice)
+        audio.play().catch(() => {})
+      } catch (err) {
+        // Non-fatal if LLM or TTS fails
+      }
+    }
+    run()
   }, [state.answered, state.correct, correct, wrong])
 
   // Navigate to results when game is over
