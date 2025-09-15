@@ -86,15 +86,18 @@ export function Play() {
   useEffect(() => {
     if (!state.answered || state.correct == null) return
     if (state.correct) {
-      correct()
-      // Applause on every correct answer
-      applause()
-      // Milestones at 5th and 10th correct answers: trigger popper and confetti
-      if (state.level === 5 || state.level === 10) {
-        popper()
-        setShowConfetti(true)
-        setTimeout(() => setShowConfetti(false), 1600)
-      }
+      ;(async () => {
+        // Ensure audio context is active, then play correct tone and applause first
+        await enable()
+        await correct()
+        await applause()
+        // Milestones at 5th and 10th correct answers: trigger popper and confetti
+        if (state.level === 5 || state.level === 10) {
+          await popper()
+          setShowConfetti(true)
+          setTimeout(() => setShowConfetti(false), 1600)
+        }
+      })()
     } else {
       wrong()
     }
@@ -114,7 +117,7 @@ export function Play() {
       }
     }
     run()
-  }, [state.answered, state.correct, correct, wrong])
+  }, [state.answered, state.correct, correct, wrong, enable, applause, popper])
 
   // Navigate to results when game is over
   useEffect(() => {

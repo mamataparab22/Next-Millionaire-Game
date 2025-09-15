@@ -157,21 +157,21 @@ export function useSfx() {
   }, [playSweep])
 
   const applause = useCallback(async () => {
-    // Schedule a cluster of short clap-like noise bursts
-    const bursts = 12
+    // Cluster of clap-like bursts, slightly louder and tighter timing
+    const bursts = 18
     for (let i = 0; i < bursts; i++) {
-      const offset = Math.random() * 900 // ms
-      const freq = 1600 + Math.random() * 800
-      playNoise(110 + Math.random() * 70, {
-        gain: 0.14 + Math.random() * 0.08,
+      const offset = Math.random() * 700 // ms
+      const freq = 1500 + Math.random() * 900
+      playNoise(120 + Math.random() * 80, {
+        gain: 0.18 + Math.random() * 0.1,
         filter: { type: 'bandpass', frequency: freq, Q: 0.9 },
-        attackMs: 8,
-        releaseMs: 100,
+        attackMs: 6,
+        releaseMs: 120,
         offsetMs: offset,
       })
     }
-    // gentle tail
-    await playNoise(220, { gain: 0.06, filter: { type: 'lowpass', frequency: 1200, Q: 0.7 }, offsetMs: 960 })
+    // fuller tail
+    await playNoise(260, { gain: 0.1, filter: { type: 'lowpass', frequency: 1400, Q: 0.8 }, offsetMs: 820 })
   }, [playNoise])
 
   const popper = useCallback(async () => {
