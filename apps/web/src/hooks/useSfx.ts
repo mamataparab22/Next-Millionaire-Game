@@ -88,7 +88,14 @@ export function useSfx() {
   const playNoise = useCallback(
     async (
       durationMs: number,
-      opts?: { gain?: number; filter?: { type: BiquadFilterType; frequency: number; Q?: number }; attackMs?: number; releaseMs?: number; offsetMs?: number }
+      opts?: {
+        gain?: number
+        filter?: { type: BiquadFilterType; frequency: number; Q?: number }
+        attackMs?: number
+        releaseMs?: number
+        offsetMs?: number
+        pan?: number // -1..1
+      }
     ) => {
       const ctx = await ensureCtx()
       const master = masterRef.current!
@@ -113,7 +120,16 @@ export function useSfx() {
         biq.frequency.value = opts.filter.frequency
         if (opts.filter.Q) biq.Q.value = opts.filter.Q
         node.connect(biq)
-        biq.connect(gain)
+        node = biq
+      } else {
+        // continue
+      }
+      // Optional panning
+      if ((ctx as any).createStereoPanner && typeof opts?.pan === 'number') {
+        const pan = (ctx as any).createStereoPanner()
+        pan.pan.value = Math.max(-1, Math.min(1, opts.pan))
+        node.connect(pan)
+        pan.connect(gain)
       } else {
         node.connect(gain)
       }
@@ -157,35 +173,50 @@ export function useSfx() {
   }, [playSweep])
 
   const applause = useCallback(async () => {
-    // Cluster of clap-like bursts, slightly louder and tighter timing
-    const bursts = 18
+    // Crowd-like clapping: randomized bursts with stereo spread and EQ
+    const bursts = 24
     for (let i = 0; i < bursts; i++) {
-      const offset = Math.random() * 700 // ms
-      const freq = 1500 + Math.random() * 900
-      playNoise(120 + Math.random() * 80, {
-        gain: 0.18 + Math.random() * 0.1,
+      const offset = Math.random() * 650 // ms
+      const freq = 1800 + Math.random() * 1200 // presence band
+      const pan = (Math.random() * 2 - 1) * 0.8
+      playNoise(110 + Math.random() * 90, {
+        gain: 0.22 + Math.random() * 0.12,
         filter: { type: 'bandpass', frequency: freq, Q: 0.9 },
-        attackMs: 6,
-        releaseMs: 120,
+        attackMs: 4 + Math.random() * 4,
+        releaseMs: 140 + Math.random() * 60,
         offsetMs: offset,
+        pan,
       })
     }
-    // fuller tail
-    await playNoise(260, { gain: 0.1, filter: { type: 'lowpass', frequency: 1400, Q: 0.8 }, offsetMs: 820 })
+    // Air/room tail to avoid abrupt stop
+    await playNoise(280, {
+      gain: 0.11,
+      filter: { type: 'lowpass', frequency: 1600, Q: 0.7 },
+      offsetMs: 760,
+    })
   }, [playNoise])
 
-  const popper = useCallback(async () => {
-    // Popper: quick pop + sparkle sweep + confetti noise
-    await playTone(220, 60, { type: 'square', gain: 0.22, attackMs: 2, releaseMs: 60 })
-    await playSweep(500, 1600, 180, { type: 'triangle', gain: 0.18 })
-    await playNoise(260, { gain: 0.18, filter: { type: 'highpass', frequency: 900, Q: 0.8 }, attackMs: 4, releaseMs: 160 })
+  const popperNormal = useCallback(async () => {
+    // Popper: snappy pop + short sparkle + confetti noise
+    await playTone(240, 70, { type: 'square', gain: 0.26, attackMs: 2, releaseMs: 70 })
+    await playSweep(600, 1700, 160, { type: 'triangle', gain: 0.2 })
+    await playNoise(220, { gain: 0.2, filter: { type: 'highpass', frequency: 1000, Q: 0.9 }, attackMs: 4, releaseMs: 150 })
   }, [playTone, playSweep, playNoise])
+
+  const popperBig = useCallback(async () => {
+    // Bigger celebration: multiple quick pops and wider sweep
+    await popperNormal()
+    await playTone(200, 60, { type: 'square', gain: 0.22, attackMs: 2, releaseMs: 60 })
+    await playSweep(700, 1900, 180, { type: 'triangle', gain: 0.22 })
+    // extra confetti hiss
+    await playNoise(320, { gain: 0.24, filter: { type: 'highpass', frequency: 900, Q: 0.9 }, attackMs: 4, releaseMs: 180 })
+  }, [popperNormal, playTone, playSweep, playNoise])
 
   const enable = useCallback(async () => {
     await ensureCtx()
   }, [ensureCtx])
 
-  return { enable, tick, correct, wrong, lifeline, applause, popper }
+  return { enable, tick, correct, wrong, lifeline, applause, popperNormal, popperBig }
 }
 
 export default useSfx
