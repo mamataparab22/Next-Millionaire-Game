@@ -5,7 +5,7 @@ import { initialState } from '../game/reducer'
 import { LoadingQuestions } from '../components/LoadingQuestions'
 import { get_direct_questions } from '../hooks/useLlmDirect'
 
-const FALLBACK_CATEGORIES = [
+const CATEGORIES = [
   'General Knowledge',
   'Science',
   'Geography',
@@ -24,7 +24,7 @@ const FALLBACK_CATEGORIES = [
 export function Home() {
   const navigate = useNavigate()
   const [selected, setSelected] = useState<string[]>([])
-  const [categories, setCategories] = useState<string[]>(FALLBACK_CATEGORIES)
+  const [categories, setCategories] = useState<string[]>(CATEGORIES)
   const [loading, setLoading] = useState(false)
   const [usedFallback, setUsedFallback] = useState(false)
   const [starting, setStarting] = useState(false)
@@ -38,33 +38,6 @@ export function Home() {
       return next
     })
   }
-
-  useEffect(() => {
-    const base = import.meta.env.VITE_API_BASE as string | undefined
-    if (!base) {
-      setUsedFallback(true)
-      return
-    }
-    setLoading(true)
-    const controller = new AbortController()
-    fetch(`${base}/categories`, { signal: controller.signal })
-      .then(async (r) => {
-        if (!r.ok) throw new Error('bad')
-        const data = await r.json()
-        if (!Array.isArray(data?.categories) || data.categories.length === 0) throw new Error('none')
-        setCategories(data.categories)
-        setUsedFallback(false)
-      })
-      .catch((err: unknown) => {
-        // Ignore aborts (React StrictMode mounts/unmounts effects in dev, causing a cancel)
-        const isAbort = err instanceof DOMException && err.name === 'AbortError'
-        if (isAbort) return
-        setCategories(FALLBACK_CATEGORIES)
-        setUsedFallback(true)
-      })
-      .finally(() => setLoading(false))
-    return () => controller.abort()
-  }, [])
 
   return (
     <main

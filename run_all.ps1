@@ -1,7 +1,5 @@
 Param(
-  [int]$ApiPort = 5177,
   [int]$WebPort = 5173,
-  [string]$ViteApiBase
 )
 
 $ErrorActionPreference = 'Stop'
@@ -11,33 +9,7 @@ function Write-Err($msg) { Write-Host "[run_all][error] $msg" -ForegroundColor R
 function Write-DebugLog($tag, $msg) { Write-Host ("[{0}] {1}" -f $tag, $msg) -ForegroundColor DarkGray }
 
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ApiDir = Join-Path $Root 'apps/api'
 $WebDir = Join-Path $Root 'apps/web'
-
-$ApiVenvDir = Join-Path $ApiDir '.venv'
-$ApiVenvPython = Join-Path $ApiVenvDir 'Scripts/python.exe'
-$ApiEnvPath = Join-Path $ApiDir '.env'
-
-if (-not $ViteApiBase) { $ViteApiBase = "http://localhost:$ApiPort" }
-
-# Surface key configuration before starting
-Write-Info "Resolved VITE_API_BASE=$ViteApiBase"
-if (Test-Path $ApiEnvPath) {
-  try {
-    $envLines = Get-Content -Path $ApiEnvPath -ErrorAction Stop | Where-Object { $_ -match '^[A-Za-z_][A-Za-z0-9_]*=' }
-    $keys = $envLines | ForEach-Object { ($_ -split '=', 2)[0] }
-    $llmKeys = $keys | Where-Object { $_ -match '^(LLM_|OPENAI_|AZURE_|ANTHROPIC_|GEMINI_)' }
-    if ($llmKeys.Count -gt 0) {
-      Write-Info ("API .env found with keys: {0}" -f ($llmKeys -join ', '))
-    } else {
-      Write-Info "API .env found (no LLM-related keys detected)"
-    }
-  } catch {
-    Write-Err "Failed to read API .env: $($_.Exception.Message)"
-  }
-} else {
-  Write-Info "API .env not found at $ApiEnvPath"
-}
 
 # Helper: aggressively kill processes listening on specific ports (fast shutdown)
 function Stop-Listeners {
@@ -86,36 +58,7 @@ if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
   exit 1
 }
 
-# Create venv and install API dependencies
-if (-not (Test-Path $ApiVenvPython)) {
-  Write-Info "Creating Python virtualenv for API..."
-  Push-Location $ApiDir
-  python -m venv .venv
-  if (-not (Test-Path $ApiVenvPython)) {
-    Write-Err "Failed to create virtualenv at $ApiVenvDir"
-    Pop-Location
-    exit 1
-  }
-  & $ApiVenvPython -m pip install --upgrade pip setuptools wheel | Out-Host
-  & $ApiVenvPython -m pip install -e . | Out-Host
-  Pop-Location
-} else {
-  Write-Info "Using existing API venv; ensuring dependencies installed..."
-  Push-Location $ApiDir
-  & $ApiVenvPython -m pip install -e . | Out-Host
-  Pop-Location
-}
 
-# Start API (FastAPI via uvicorn) in background job
-Write-Info "Starting API (FastAPI) on :$ApiPort"
-$apiJob = Start-Job -Name 'runall-api' -ScriptBlock {
-  Param($ApiDir, $PythonExe, $Port)
-  Set-Location $ApiDir
-  # Ensure src takes precedence for imports so latest code is used
-  $env:PYTHONPATH = Join-Path $ApiDir 'src'
-  $reloadDir = Join-Path $ApiDir 'src'
-  & $PythonExe -m uvicorn --app-dir src millionaire_api.main:app --host 0.0.0.0 --port $Port --reload --reload-dir $reloadDir --log-level debug
-} -ArgumentList $ApiDir, $ApiVenvPython, $ApiPort
 
 # Start web (Vite) in background job
 Write-Info "Starting web (Vite) on :$WebPort with VITE_API_BASE=$ViteApiBase using $pm"

@@ -6,21 +6,7 @@ app.use(cors())
 app.use(express.json())
 
 // Simple in-memory sample; could be replaced by DB/LLM later
-const categories = [
-  'General Knowledge',
-  'Science',
-  'Geography',
-  'Movies',
-  'Sports',
-  'History',
-  'Music',
-  'Technology',
-  'Physics',
-  'Literature',
-  'Mathematics',
-  'Chemistry',
-  'World History'
-]
+
 
 app.get('/health', (_req, res) => res.json({ ok: true }))
 
@@ -44,7 +30,3 @@ app.post('/questions', (req, res) => {
   res.json({ questions: out })
 })
 
-const port = process.env.PORT || 5177
-app.listen(port, () => {
-  console.log(`API listening on http://localhost:${port}`)
-})
