@@ -16,7 +16,7 @@ export function useSfx() {
   const SFX_CFG = {
     clapMs: 1700,
     clapMilestoneMs: 2700,
-    clapGain: 0.95,
+    clapGain: 1.0,
     clapFadeInMs: 12,
     clapFadeOutMs: 120,
     timerGain: 0.38,
@@ -56,6 +56,9 @@ export function useSfx() {
           : 'Timer.wav'
       const url = `${baseUrl}${file}`
       const res = await fetch(url)
+      if (!res.ok) {
+        throw new Error(`Failed to load sample ${file}: ${res.status}`)
+      }
       const buf = await res.arrayBuffer()
       const ctx = await ensureCtx()
       const audio = await ctx.decodeAudioData(buf.slice(0))
@@ -322,16 +325,21 @@ export function useSfx() {
   }, [popperNormal, playTone, playSweep, playNoise])
 
   const applauseSample = useCallback(async (opts?: { milestone?: boolean }) => {
-    const buf = await loadSample(opts?.milestone ? 'clapMilestone' : 'clap')
-    const maxMs = opts?.milestone ? SFX_CFG.clapMilestoneMs : SFX_CFG.clapMs
-    await playSample(buf, {
-      startSec: 0,
-      durationMs: maxMs,
-      gain: SFX_CFG.clapGain,
-      fadeInMs: SFX_CFG.clapFadeInMs,
-      fadeOutMs: SFX_CFG.clapFadeOutMs,
-    })
-  }, [loadSample, playSample])
+    try {
+      const buf = await loadSample(opts?.milestone ? 'clapMilestone' : 'clap')
+      const maxMs = opts?.milestone ? SFX_CFG.clapMilestoneMs : SFX_CFG.clapMs
+      await playSample(buf, {
+        startSec: 0,
+        durationMs: maxMs,
+        gain: SFX_CFG.clapGain,
+        fadeInMs: SFX_CFG.clapFadeInMs,
+        fadeOutMs: SFX_CFG.clapFadeOutMs,
+      })
+    } catch (e) {
+      // Fallback to synthesized applause if the sample fails
+      await applause()
+    }
+  }, [loadSample, playSample, applause])
 
   const startTimerLoop = useCallback(async () => {
     if (timerNodeRef.current) return
