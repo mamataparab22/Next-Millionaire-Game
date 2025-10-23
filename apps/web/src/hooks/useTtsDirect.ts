@@ -10,8 +10,8 @@ interface TtsRequestBodyAmazonPolly {
     output_format: string;
 }
 
-const BASE_URL = "https://api-epic.ir-gateway.abbvienet.com/iliad"; 
-const ILIAD_API_KEY = "RlgQp6a8hyH18wgy54hBXN1POUSPRAEd"; 
+const BASE_URL = import.meta.env.VITE_ILIAD_BASE_URL;
+const ILIAD_API_KEY = import.meta.env.VITE_ILIAD_API_KEY;
   
 // Open AI GPT-4o-mini-tts endpoint
 export async function getTtsAudioGpt(
