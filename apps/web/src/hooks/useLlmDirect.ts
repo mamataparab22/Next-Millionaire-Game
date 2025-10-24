@@ -1,10 +1,10 @@
 import type { Question } from "../game/types";
 
-const BASE_URL = "https://api-epic.ir-gateway.abbvienet.com/iliad"; 
-const ILIAD_API_KEY = "RlgQp6a8hyH18wgy54hBXN1POUSPRAEd"; 
+const BASE_URL = import.meta.env.VITE_ILIAD_BASE_URL;
+const ILIAD_API_KEY = import.meta.env.VITE_ILIAD_API_KEY;
 
-const DEPLOYMENT = "gpt-4o";
-const CHAT_API_VERSION = "2023-07-01-preview";
+const DEPLOYMENT = import.meta.env.VITE_ILIAD_DEPLOYMENT;
+const CHAT_API_VERSION = import.meta.env.VITE_ILIAD_API_VERSION;
 
 const _SYSTEM_PROMPT =
   "You are a question generator for a Who Wants to Be a Millionaire style quiz. " +
